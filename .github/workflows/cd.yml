@@ -17,37 +17,197 @@ on:
         description: "Pre-release id (e.g. beta, rc). Leave blank for stable"
         required: false
         type: string
+      npm_tag:
+        description: "npm dist-tag"
+        required: false
+        type: string
+        default: "latest"
+      run_validation:
+        description: "Run validation before publishing"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   actions: read
-  contents: write
-  id-token: write # for npm provenance and SBOM attestations
   attestations: write
+  contents: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: npm-cd-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  select-runner:
-    uses: Plasius-LTD/plasius-ltd-site/.github/workflows/package-runner.yml@main
-    permissions:
-      actions: read
-      contents: read
+  prepare_release:
+    uses: Plasius-LTD/plasius-ltd-site/.github/workflows/release-prepare.yml@main
+    with:
+      bump: ${{ inputs.bump }}
+      preid: ${{ inputs.preid }}
     secrets: inherit
 
   publish:
-    needs: select-runner
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner_labels) }}
+    needs: prepare_release
+    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
-      - name: Publish package
-        uses: Plasius-LTD/plasius-ltd-site/.github/actions/package-publish@main
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
         with:
-          bump: ${{ inputs.bump }}
-          preid: ${{ inputs.preid }}
+          node-version-file: ".nvmrc"
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+
+      - name: Use prepared release metadata
+        id: release
+        run: |
+          set -euo pipefail
+
+          PUBLISHED="${{ needs.prepare_release.outputs.published }}"
+          SHOULD_PUBLISH="true"
+          SKIP_REASON=""
+          if [ "${PUBLISHED}" = "true" ]; then
+            SHOULD_PUBLISH="false"
+            SKIP_REASON="Package version ${{ needs.prepare_release.outputs.version }} is already published; nothing to release."
+          fi
+
+          {
+            echo "package_name=${{ needs.prepare_release.outputs.name }}"
+            echo "release_version=${{ needs.prepare_release.outputs.version }}"
+            echo "release_tag=${{ needs.prepare_release.outputs.tag }}"
+            echo "flags=${{ needs.prepare_release.outputs.flags }}"
+            echo "should_publish=${SHOULD_PUBLISH}"
+            echo "skip_reason=${SKIP_REASON}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip when package version is already published
+        if: steps.release.outputs.should_publish != 'true'
+        run: echo "${{ steps.release.outputs.skip_reason }}"
+
+      - name: Install dependencies
+        if: steps.release.outputs.should_publish == 'true'
+        run: npm ci --no-fund --no-audit || npm install --no-fund --no-audit
+
+      - name: Run validation
+        if: steps.release.outputs.should_publish == 'true' && inputs.run_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_script() {
+            node -e "const scripts = require('./package.json').scripts || {}; process.exit(scripts[process.argv[1]] ? 0 : 1)" "$1"
+          }
+
+          if has_script lint; then npm run lint; fi
+          if has_script typecheck; then npm run typecheck; fi
+          if has_script audit:npm; then npm run audit:npm; fi
+          if has_script build; then npm run build; fi
+          if has_script test:coverage; then
+            npm run test:coverage
+          elif has_script test; then
+            npm test
+          fi
+          if has_script pack:check; then npm run pack:check; fi
+
+      - name: Generate SBOM (CycloneDX)
+        if: steps.release.outputs.should_publish == 'true'
+        run: npm sbom --sbom-format=cyclonedx --sbom-type=library --omit dev > sbom.cdx.json
+        continue-on-error: true
+
+      - name: Attest SBOM
+        if: steps.release.outputs.should_publish == 'true' && hashFiles('sbom.cdx.json') != ''
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: sbom.cdx.json
+
+      - name: Create release tag from main
+        if: steps.release.outputs.should_publish == 'true'
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          git checkout -B main origin/main
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            if gh release view "${TAG}" >/dev/null 2>&1; then
+              IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
+              if [ "${IS_DRAFT}" != "true" ]; then
+                echo "Published release ${TAG} already exists; reusing the existing tag."
+                exit 0
+              fi
+            fi
+
+            echo "Deleting stale unpublished tag ${TAG} before recreating it from main."
+            git push origin ":refs/tags/${TAG}"
+          fi
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      - name: Create GitHub Release draft
+        if: steps.release.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
+            if [ "${IS_DRAFT}" != "true" ]; then
+              echo "Release ${TAG} already exists and is published. Cut a new version instead."
+              exit 1
+            fi
+
+            if [ -s sbom.cdx.json ]; then
+              gh release upload "${TAG}" sbom.cdx.json --clobber
+            fi
+          else
+            if [ -s sbom.cdx.json ]; then
+              gh release create "${TAG}" sbom.cdx.json --title "Release ${TAG}" --generate-notes --verify-tag --draft
+            else
+              gh release create "${TAG}" --title "Release ${TAG}" --generate-notes --verify-tag --draft
+            fi
+          fi
+
+      - name: Publish package
+        if: steps.release.outputs.should_publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          FLAGS: ${{ steps.release.outputs.flags }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN is required" >&2
+            exit 1
+          fi
+
+          npm publish ${FLAGS} --provenance --tag "${{ inputs.npm_tag }}" --registry https://registry.npmjs.org
+
+      - name: Publish GitHub Release
+        if: steps.release.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Expected draft release ${TAG} to exist before publication."
+            exit 1
+          fi
+
+          IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
+          if [ "${IS_DRAFT}" = "true" ]; then
+            gh release edit "${TAG}" --draft=false --latest
+          else
+            echo "Release ${TAG} is already published; skipping publication."
+          fi
