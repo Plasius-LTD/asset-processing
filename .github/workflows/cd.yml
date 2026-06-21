@@ -17,16 +17,6 @@ on:
         description: "Pre-release id (e.g. beta, rc). Leave blank for stable"
         required: false
         type: string
-      npm_tag:
-        description: "npm dist-tag"
-        required: false
-        type: string
-        default: "latest"
-      run_validation:
-        description: "Run validation before publishing"
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   actions: read
@@ -36,7 +26,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: npm-cd-${{ github.ref }}
+  group: npm-cd-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -52,10 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
+      - name: Checkout prepared release commit
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.prepare_release.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Use Node.js 24
@@ -63,7 +53,7 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           registry-url: "https://registry.npmjs.org"
-          cache: "npm"
+          cache: npm
 
       - name: Use prepared release metadata
         id: release
@@ -93,10 +83,10 @@ jobs:
 
       - name: Install dependencies
         if: steps.release.outputs.should_publish == 'true'
-        run: npm ci --no-fund --no-audit || npm install --no-fund --no-audit
+        run: npm ci
 
       - name: Run validation
-        if: steps.release.outputs.should_publish == 'true' && inputs.run_validation
+        if: steps.release.outputs.should_publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -127,30 +117,39 @@ jobs:
         with:
           subject-path: sbom.cdx.json
 
-      - name: Create release tag from main
+      - name: Ensure release tag points at prepared commit
         if: steps.release.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.release_tag }}
         run: |
           set -euo pipefail
-          git fetch origin main --tags
-          git checkout -B main origin/main
+
+          HEAD_SHA="$(git rev-parse HEAD)"
+          git fetch origin --tags --force
 
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --force
+            TAG_SHA="$(git rev-list -n 1 "${TAG}")"
+            if [ "${TAG_SHA}" = "${HEAD_SHA}" ]; then
+              echo "Tag ${TAG} already points at prepared commit ${HEAD_SHA}."
+              exit 0
+            fi
+
             if gh release view "${TAG}" >/dev/null 2>&1; then
               IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
               if [ "${IS_DRAFT}" != "true" ]; then
-                echo "Published release ${TAG} already exists; reusing the existing tag."
-                exit 0
+                echo "Release ${TAG} already exists and is published at ${TAG_SHA}; cut a new version instead." >&2
+                exit 1
               fi
             fi
 
-            echo "Deleting stale unpublished tag ${TAG} before recreating it from main."
+            echo "Replacing stale unpublished tag ${TAG}."
             git push origin ":refs/tags/${TAG}"
+            git tag -d "${TAG}" >/dev/null 2>&1 || true
           fi
 
-          git tag "${TAG}"
+          git tag "${TAG}" "${HEAD_SHA}"
           git push origin "${TAG}"
 
       - name: Create GitHub Release draft
@@ -158,25 +157,32 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.release_tag }}
+          PREID: ${{ inputs.preid }}
         run: |
           set -euo pipefail
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
             if [ "${IS_DRAFT}" != "true" ]; then
-              echo "Release ${TAG} already exists and is published. Cut a new version instead."
+              echo "Release ${TAG} already exists and is published. Cut a new version instead." >&2
               exit 1
             fi
 
             if [ -s sbom.cdx.json ]; then
               gh release upload "${TAG}" sbom.cdx.json --clobber
             fi
+            exit 0
+          fi
+
+          ARGS=(--title "Release ${TAG}" --generate-notes --verify-tag --draft)
+          if [ -n "${PREID}" ]; then
+            ARGS+=(--prerelease)
+          fi
+
+          if [ -s sbom.cdx.json ]; then
+            gh release create "${TAG}" sbom.cdx.json "${ARGS[@]}"
           else
-            if [ -s sbom.cdx.json ]; then
-              gh release create "${TAG}" sbom.cdx.json --title "Release ${TAG}" --generate-notes --verify-tag --draft
-            else
-              gh release create "${TAG}" --title "Release ${TAG}" --generate-notes --verify-tag --draft
-            fi
+            gh release create "${TAG}" "${ARGS[@]}"
           fi
 
       - name: Publish package
@@ -191,23 +197,23 @@ jobs:
             exit 1
           fi
 
-          npm publish ${FLAGS} --provenance --tag "${{ inputs.npm_tag }}" --registry https://registry.npmjs.org
+          npm publish ${FLAGS} --provenance --registry https://registry.npmjs.org
 
       - name: Publish GitHub Release
         if: steps.release.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.release_tag }}
+          PREID: ${{ inputs.preid }}
         run: |
           set -euo pipefail
           if ! gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Expected draft release ${TAG} to exist before publication."
+            echo "Expected draft release ${TAG} to exist before publication." >&2
             exit 1
           fi
 
-          IS_DRAFT="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
-          if [ "${IS_DRAFT}" = "true" ]; then
-            gh release edit "${TAG}" --draft=false --latest
+          if [ -n "${PREID}" ]; then
+            gh release edit "${TAG}" --draft=false --prerelease
           else
-            echo "Release ${TAG} is already published; skipping publication."
+            gh release edit "${TAG}" --draft=false --latest
           fi
