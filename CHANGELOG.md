@@ -14,6 +14,20 @@
 - **Security**
   - (placeholder)
 
+## [0.1.2] - 2026-06-22
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
 ## [0.1.1] - 2026-06-21
 
 - Scaffolded @plasius/asset-processing for the unified AI asset pipeline.
@@ -21,3 +35,4 @@
 
 
 [0.1.1]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.1
+[0.1.2]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.2

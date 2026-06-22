@@ -1,6 +1,6 @@
 {
   "name": "@plasius/asset-processing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Processing operation contracts for Plasius model cleanup, texture normalization, LOD, collision proxy, and runtime packaging.",
   "type": "module",
   "sideEffects": false,
