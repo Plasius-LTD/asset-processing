@@ -158,7 +158,7 @@ The following repo- or directory-specific guidance from the previous local `AGEN
 This repo is `@plasius/asset-processing`, a TypeScript contracts library for Plasius asset cleanup, texture normalization, LOD, collision proxy, and runtime packaging operations.
 
 ### Setup
-- Use Node.js 22 (see `.nvmrc`) and npm.
+- Use Node.js 24 (see `.nvmrc`) and npm.
 - Install dependencies with `npm ci`.
 
 ### Common commands
