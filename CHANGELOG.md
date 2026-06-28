@@ -6,6 +6,20 @@
   - (placeholder)
 
 - **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.3] - 2026-06-28
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
   - Refreshed development dependency baselines to `@types/node@26.0.1` and `eslint@10.6.0`.
 
 - **Fixed**
@@ -36,3 +50,4 @@
 
 [0.1.1]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.1
 [0.1.2]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.2
+[0.1.3]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.3
