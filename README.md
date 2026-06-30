@@ -15,6 +15,20 @@ This package is part of the unified AI asset pipeline package family. It is scaf
 ## Feature Flag
 
 - `asset.pipeline.unified-ai-assets.enabled`
+- `asset.pipeline.external-model-harvest.enabled`
+
+## External Model Processing
+
+External free-model processing plans preserve raw source assets and normalize
+runtime outputs to glTF/GLB, meters, Y-up, `-Z` forward, floor-centered origin,
+stable file digests, four LOD budgets, optimized textures, and collision
+proxies for game runtime promotion.
+
+## Mixamo Animation Metadata
+
+`extractMixamoAnimationMetadata` accepts parsed glTF/GLB JSON and returns the
+clip duration, animated node targets, root-translation availability, skeleton
+compatibility, and whether the clip is part of the farm-adventure v1 allow-list.
 
 ## Related Documents
 
