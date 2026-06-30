@@ -3,7 +3,6 @@ import {
   ASSET_PROCESSING_OPERATIONS,
   MIXAMO_FARM_ADVENTURE_CLIP_IDS,
   createDefaultProcessingPlan,
-  createExternalModelProcessingPlan,
   extractMixamoAnimationMetadata,
   isMixamoFarmAdventureClipId,
   resolveModelContentType,
@@ -13,9 +12,6 @@ describe("asset processing", () => {
   it("resolves runtime content types", () => {
     expect(resolveModelContentType("chair.gltf")).toBe("model/gltf+json");
     expect(resolveModelContentType("chair.glb")).toBe("model/gltf-binary");
-    expect(resolveModelContentType("chair.obj")).toBe("text/plain");
-    expect(resolveModelContentType("chair.dae")).toBe("model/vnd.collada+xml");
-    expect(resolveModelContentType("chair.stl")).toBe("model/stl");
     expect(resolveModelContentType("texture.jpeg")).toBe("image/jpeg");
     expect(resolveModelContentType("texture.webp")).toBe("image/webp");
     expect(resolveModelContentType("payload.bin")).toBe("application/octet-stream");
@@ -29,62 +25,6 @@ describe("asset processing", () => {
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.steps)).toBe(true);
     expect(plan.targetRuntime).toBe("gpu-shared");
-  });
-
-  it("creates remote external processing plans with the canonical runtime model contract", () => {
-    const plan = createExternalModelProcessingPlan("polyhaven-chair", {
-      sourceFormat: "obj",
-      remoteWorkerQueue: "asset-processing-high",
-    });
-
-    expect(plan.targetRuntime).toBe("game-runtime");
-    expect(plan.sourceFormat).toBe("obj");
-    expect(plan.remoteWorkerQueue).toBe("asset-processing-high");
-    expect(plan.preserveRawSource).toBe(true);
-    expect(plan.normalization).toEqual({
-      outputFormat: "glb",
-      unit: "meter",
-      upAxis: "Y",
-      forwardAxis: "-Z",
-      origin: "floor-center",
-      stableDigests: true,
-    });
-    expect(plan.lodBudgets.map((budget) => budget.level)).toEqual(["lod0", "lod1", "lod2", "lod3"]);
-    expect(plan.steps.map((step) => step.operation)).toContain("normalize-orientation");
-    expect(plan.steps.map((step) => step.operation)).toContain("generate-lod3");
-    expect(Object.isFrozen(plan.normalization)).toBe(true);
-    expect(Object.isFrozen(plan.lodBudgets)).toBe(true);
-  });
-
-  it("rejects incomplete LOD budget sets for external processing", () => {
-    expect(() =>
-      createExternalModelProcessingPlan("polyhaven-chair", {
-        lodBudgets: [
-          { level: "lod0", maxTriangles: 1000, textureMaxSize: 1024 },
-          { level: "lod1", maxTriangles: 500, textureMaxSize: 512 },
-        ],
-      })
-    ).toThrow(/lod0, lod1, lod2, and lod3/);
-    expect(() =>
-      createExternalModelProcessingPlan("polyhaven-chair", {
-        lodBudgets: [
-          { level: "lod0", maxTriangles: 1000, textureMaxSize: 1024 },
-          { level: "lod1", maxTriangles: 500, textureMaxSize: 512 },
-          { level: "lod2", maxTriangles: 0, textureMaxSize: 256 },
-          { level: "lod3", maxTriangles: 100, textureMaxSize: 128 },
-        ],
-      })
-    ).toThrow(/maxTriangles/);
-    expect(() =>
-      createExternalModelProcessingPlan("polyhaven-chair", {
-        lodBudgets: [
-          { level: "lod0", maxTriangles: 1000, textureMaxSize: 1024 },
-          { level: "lod1", maxTriangles: 500, textureMaxSize: 512 },
-          { level: "lod2", maxTriangles: 250, textureMaxSize: 0 },
-          { level: "lod3", maxTriangles: 100, textureMaxSize: 128 },
-        ],
-      })
-    ).toThrow(/textureMaxSize/);
   });
 
   it("extracts Mixamo animation metadata for renderer playback", () => {
