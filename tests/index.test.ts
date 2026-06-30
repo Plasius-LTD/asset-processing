@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ASSET_PROCESSING_OPERATIONS, createDefaultProcessingPlan, resolveModelContentType } from "../src/index.js";
+import {
+  ASSET_PROCESSING_OPERATIONS,
+  MIXAMO_FARM_ADVENTURE_CLIP_IDS,
+  createDefaultProcessingPlan,
+  extractMixamoAnimationMetadata,
+  isMixamoFarmAdventureClipId,
+  resolveModelContentType,
+} from "../src/index.js";
 
 describe("asset processing", () => {
   it("resolves runtime content types", () => {
@@ -18,5 +25,70 @@ describe("asset processing", () => {
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.steps)).toBe(true);
     expect(plan.targetRuntime).toBe("gpu-shared");
+  });
+
+  it("extracts Mixamo animation metadata for renderer playback", () => {
+    const metadata = extractMixamoAnimationMetadata(
+      "female-basic-locomotion-walking",
+      {
+        nodes: [
+          { name: "mixamorig:Hips" },
+          { name: "mixamorig:LeftUpLeg" },
+          { name: "mixamorig:RightArm" },
+        ],
+        accessors: [
+          { max: [1.2] },
+          { max: [2.4] },
+        ],
+        animations: [
+          {
+            name: "Walking",
+            samplers: [{ input: 0 }, { input: 1 }],
+            channels: [
+              { sampler: 0, target: { node: 0, path: "translation" } },
+              { sampler: 1, target: { node: 1, path: "rotation" } },
+              { sampler: 1, target: { node: 2, path: "rotation" } },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(metadata).toEqual({
+      clipId: "female-basic-locomotion-walking",
+      durationMs: 2400,
+      animatedNodeTargets: [
+        "mixamorig:Hips",
+        "mixamorig:LeftUpLeg",
+        "mixamorig:RightArm",
+      ],
+      rootTranslation: true,
+      skeletonCompatible: true,
+      usableForFarmAdventure: true,
+    });
+  });
+
+  it("keeps farm adventure clip ids explicit and detects incompatible skeletons", () => {
+    expect(MIXAMO_FARM_ADVENTURE_CLIP_IDS).toContain("farming-watering");
+    expect(isMixamoFarmAdventureClipId("gestures-basic-happy-hand-gesture")).toBe(true);
+    expect(isMixamoFarmAdventureClipId("gestures-basic-acknowledging")).toBe(false);
+
+    const metadata = extractMixamoAnimationMetadata(
+      "farming-watering",
+      {
+        nodes: [{ name: "OtherRig:Hips" }],
+        accessors: [{ max: [1] }],
+        animations: [
+          {
+            samplers: [{ input: 0 }],
+            channels: [{ sampler: 0, target: { node: 0, path: "translation" } }],
+          },
+        ],
+      },
+    );
+
+    expect(metadata.rootTranslation).toBe(false);
+    expect(metadata.skeletonCompatible).toBe(false);
+    expect(metadata.usableForFarmAdventure).toBe(false);
   });
 });

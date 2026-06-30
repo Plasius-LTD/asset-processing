@@ -3,7 +3,9 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added Mixamo farm-adventure animation metadata extraction for duration,
+    animated node targets, root translation availability, and skeleton
+    compatibility.
 
 - **Changed**
   - (placeholder)
