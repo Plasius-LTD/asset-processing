@@ -3,6 +3,20 @@
 ## Unreleased
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.5] - 2026-06-30
+
+- **Added**
   - Added Mixamo farm-adventure animation metadata extraction for duration,
     animated node targets, root translation availability, and skeleton
     compatibility.
@@ -68,3 +82,4 @@
 [0.1.2]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.2
 [0.1.3]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.3
 [0.1.4]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.4
+[0.1.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.5
