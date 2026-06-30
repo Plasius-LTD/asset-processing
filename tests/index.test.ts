@@ -75,6 +75,16 @@ describe("asset processing", () => {
         ],
       })
     ).toThrow(/maxTriangles/);
+    expect(() =>
+      createExternalModelProcessingPlan("polyhaven-chair", {
+        lodBudgets: [
+          { level: "lod0", maxTriangles: 1000, textureMaxSize: 1024 },
+          { level: "lod1", maxTriangles: 500, textureMaxSize: 512 },
+          { level: "lod2", maxTriangles: 250, textureMaxSize: 0 },
+          { level: "lod3", maxTriangles: 100, textureMaxSize: 128 },
+        ],
+      })
+    ).toThrow(/textureMaxSize/);
   });
 
   it("extracts Mixamo animation metadata for renderer playback", () => {
