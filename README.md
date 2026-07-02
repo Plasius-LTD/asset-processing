@@ -29,6 +29,10 @@ proxies for game runtime promotion.
 `extractMixamoAnimationMetadata` accepts parsed glTF/GLB JSON and returns the
 clip duration, animated node targets, root-translation availability, skeleton
 compatibility, and whether the clip is part of the farm-adventure v1 allow-list.
+It also returns a `movementProfile` used by Animation Adventure load-time
+validation, including motion mode, root/calibrated travel distance, expected
+speed, foot-contact windows, vertical bounds, loopability, displacement
+permission, and quarantine reason when a clip must not drive adventure playback.
 
 ## Related Documents
 

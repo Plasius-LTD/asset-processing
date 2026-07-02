@@ -52,9 +52,19 @@ describe("asset processing", () => {
           },
         ],
       },
+      {
+        movementCalibration: {
+          motionMode: "calibrated-in-place",
+          strideLength: 1.2,
+          expectedSpeed: 1,
+          footContactWindows: [[0.12, 0.28], [0.62, 0.78]],
+          loopable: true,
+          worldDisplacementAllowed: true,
+        },
+      },
     );
 
-    expect(metadata).toEqual({
+    expect(metadata).toMatchObject({
       clipId: "female-basic-locomotion-walking",
       durationMs: 2400,
       animatedNodeTargets: [
@@ -65,12 +75,24 @@ describe("asset processing", () => {
       rootTranslation: true,
       skeletonCompatible: true,
       usableForFarmAdventure: true,
+      movementProfile: {
+        motionMode: "calibrated-in-place",
+        durationMs: 2400,
+        rootTranslationDistance: 0,
+        expectedSpeed: 1,
+        strideLength: 1.2,
+        footContactWindows: [[0.12, 0.28], [0.62, 0.78]],
+        verticalBounds: [0, 0],
+        loopable: true,
+        worldDisplacementAllowed: true,
+        footSlideTolerance: 0.05,
+      },
     });
   });
 
   it("keeps farm adventure clip ids explicit and detects incompatible skeletons", () => {
     expect(MIXAMO_FARM_ADVENTURE_CLIP_IDS).toContain("farming-watering");
-    expect(isMixamoFarmAdventureClipId("gestures-basic-happy-hand-gesture")).toBe(true);
+    expect(isMixamoFarmAdventureClipId("gestures-basic-happy-hand-gesture")).toBe(false);
     expect(isMixamoFarmAdventureClipId("gestures-basic-acknowledging")).toBe(false);
 
     const metadata = extractMixamoAnimationMetadata(
@@ -90,5 +112,57 @@ describe("asset processing", () => {
     expect(metadata.rootTranslation).toBe(false);
     expect(metadata.skeletonCompatible).toBe(false);
     expect(metadata.usableForFarmAdventure).toBe(false);
+  });
+
+  it("quarantines invalid clips and marks stationary actions as non-displacing", () => {
+    const stationary = extractMixamoAnimationMetadata(
+      "farming-watering",
+      {
+        nodes: [{ name: "mixamorig:Hips" }],
+        accessors: [{ max: [1.6] }, { min: [0, 0, 0], max: [0.01, 0.02, 0.01] }],
+        animations: [
+          {
+            samplers: [{ input: 0, output: 1 }],
+            channels: [{ sampler: 0, target: { node: 0, path: "translation" } }],
+          },
+        ],
+      },
+      {
+        movementCalibration: {
+          motionMode: "stationary",
+          worldDisplacementAllowed: false,
+          footSlideTolerance: 0.03,
+        },
+      },
+    );
+
+    expect(stationary.movementProfile.motionMode).toBe("stationary");
+    expect(stationary.movementProfile.worldDisplacementAllowed).toBe(false);
+    expect(stationary.movementProfile.rootTranslationDistance).toBeLessThan(0.02);
+    expect(stationary.usableForFarmAdventure).toBe(true);
+
+    const invalid = extractMixamoAnimationMetadata(
+      "gestures-basic-happy-hand-gesture",
+      {
+        nodes: [{ name: "mixamorig:Hips" }],
+        accessors: [{ max: [1] }],
+        animations: [
+          {
+            samplers: [{ input: 0 }],
+            channels: [{ sampler: 0, target: { node: 0, path: "rotation" } }],
+          },
+        ],
+      },
+      {
+        movementCalibration: {
+          motionMode: "invalid",
+          quarantineReason: "gesture pack hips baseline is incompatible with Peasant Girl",
+        },
+      },
+    );
+
+    expect(invalid.usableForFarmAdventure).toBe(false);
+    expect(invalid.quarantineReason).toMatch(/incompatible/u);
+    expect(invalid.movementProfile.motionMode).toBe("invalid");
   });
 });

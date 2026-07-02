@@ -17,7 +17,6 @@ export const MIXAMO_FARM_ADVENTURE_CLIP_IDS = Object.freeze([
   "farming-watering",
   "farming-pick-fruit",
   "female-basic-locomotion-jump",
-  "gestures-basic-happy-hand-gesture",
 ] as const);
 
 export type AssetProcessingOperation = typeof ASSET_PROCESSING_OPERATIONS[number];
@@ -77,6 +76,40 @@ export interface MixamoAnimationMetadata {
   readonly rootTranslation: boolean;
   readonly skeletonCompatible: boolean;
   readonly usableForFarmAdventure: boolean;
+  readonly movementProfile: MixamoAnimationMovementProfile;
+  readonly quarantineReason?: string;
+}
+
+export type MixamoAnimationMotionMode =
+  | "stationary"
+  | "calibrated-in-place"
+  | "root-authored"
+  | "jump"
+  | "modifier"
+  | "invalid";
+
+export interface MixamoAnimationMovementProfile {
+  readonly motionMode: MixamoAnimationMotionMode;
+  readonly durationMs: number;
+  readonly rootTranslationDistance: number;
+  readonly expectedSpeed: number;
+  readonly strideLength: number;
+  readonly footContactWindows: readonly [number, number][];
+  readonly verticalBounds: readonly [number, number];
+  readonly loopable: boolean;
+  readonly worldDisplacementAllowed: boolean;
+  readonly footSlideTolerance: number;
+}
+
+export interface MixamoAnimationMovementCalibration {
+  readonly motionMode?: MixamoAnimationMotionMode;
+  readonly strideLength?: number;
+  readonly expectedSpeed?: number;
+  readonly footContactWindows?: readonly [number, number][];
+  readonly loopable?: boolean;
+  readonly worldDisplacementAllowed?: boolean;
+  readonly footSlideTolerance?: number;
+  readonly quarantineReason?: string;
 }
 
 export const MODEL_CONTENT_TYPES = Object.freeze({
@@ -101,11 +134,15 @@ export function extractMixamoAnimationMetadata(
   options: {
     readonly expectedRootNodeNames?: readonly string[];
     readonly requiredSkeletonPrefix?: string;
+    readonly movementCalibration?: MixamoAnimationMovementCalibration;
   } = {},
 ): MixamoAnimationMetadata {
   const animation = document.animations?.[0];
   const nodeNames = new Set<string>();
   let rootTranslation = false;
+  let rootTranslationDistance = 0;
+  let verticalMin = 0;
+  let verticalMax = 0;
   let durationSeconds = 0;
   const expectedRoots = options.expectedRootNodeNames ?? ["mixamorig:Hips", "Hips", "mixamorigHips"];
   const skeletonPrefix = options.requiredSkeletonPrefix ?? "mixamorig";
@@ -116,14 +153,26 @@ export function extractMixamoAnimationMetadata(
       : undefined;
     const nodeName = node?.name ?? `node-${channel.target?.node ?? "unknown"}`;
     nodeNames.add(nodeName);
-
-    if (channel.target?.path === "translation" && expectedRoots.includes(nodeName)) {
-      rootTranslation = true;
-    }
-
     const sampler = typeof channel.sampler === "number"
       ? animation?.samplers?.[channel.sampler]
       : undefined;
+
+    if (channel.target?.path === "translation" && expectedRoots.includes(nodeName)) {
+      rootTranslation = true;
+      const outputAccessor = typeof sampler?.output === "number"
+        ? document.accessors?.[sampler.output]
+        : undefined;
+      const min = outputAccessor?.min ?? [];
+      const max = outputAccessor?.max ?? [];
+      const horizontalDistance = Math.hypot(
+        (max[0] ?? 0) - (min[0] ?? 0),
+        (max[2] ?? 0) - (min[2] ?? 0),
+      );
+      rootTranslationDistance = Math.max(rootTranslationDistance, horizontalDistance);
+      verticalMin = Math.min(verticalMin, min[1] ?? 0);
+      verticalMax = Math.max(verticalMax, max[1] ?? 0);
+    }
+
     const inputAccessor = typeof sampler?.input === "number"
       ? document.accessors?.[sampler.input]
       : undefined;
@@ -135,14 +184,50 @@ export function extractMixamoAnimationMetadata(
 
   const animatedNodeTargets = [...nodeNames].sort();
   const skeletonCompatible = animatedNodeTargets.some((target) => target.startsWith(skeletonPrefix));
+  const calibration = options.movementCalibration;
+  const calibratedStride = Math.max(0, calibration?.strideLength ?? 0);
+  const motionMode =
+    calibration?.motionMode
+    ?? (rootTranslationDistance > 0.01
+      ? (clipId.includes("jump") ? "jump" : "root-authored")
+      : calibratedStride > 0
+        ? "calibrated-in-place"
+        : "stationary");
+  const distance = rootTranslationDistance > 0 ? rootTranslationDistance : calibratedStride;
+  const durationMs = Math.round(durationSeconds * 1000);
+  const expectedSpeed = Math.max(
+    0,
+    calibration?.expectedSpeed ?? (durationMs > 0 ? distance / (durationMs / 1000) : 0),
+  );
+  const defaultWorldDisplacementAllowed =
+    motionMode === "root-authored" || motionMode === "calibrated-in-place" || motionMode === "jump";
+  const worldDisplacementAllowed =
+    calibration?.worldDisplacementAllowed ?? defaultWorldDisplacementAllowed;
+  const quarantineReason =
+    calibration?.quarantineReason
+    ?? (motionMode === "invalid" ? "clip marked invalid for adventure playback" : undefined);
+  const movementProfile = Object.freeze({
+    motionMode,
+    durationMs,
+    rootTranslationDistance,
+    expectedSpeed,
+    strideLength: calibratedStride,
+    footContactWindows: Object.freeze([...(calibration?.footContactWindows ?? [])]),
+    verticalBounds: Object.freeze([verticalMin, verticalMax] as const),
+    loopable: calibration?.loopable ?? (motionMode === "stationary" || motionMode === "calibrated-in-place"),
+    worldDisplacementAllowed,
+    footSlideTolerance: calibration?.footSlideTolerance ?? 0.05,
+  });
 
   return Object.freeze({
     clipId,
-    durationMs: Math.round(durationSeconds * 1000),
+    durationMs,
     animatedNodeTargets: Object.freeze(animatedNodeTargets),
     rootTranslation,
     skeletonCompatible,
-    usableForFarmAdventure: isMixamoFarmAdventureClipId(clipId) && skeletonCompatible,
+    usableForFarmAdventure: isMixamoFarmAdventureClipId(clipId) && skeletonCompatible && !quarantineReason,
+    movementProfile,
+    ...(quarantineReason ? { quarantineReason } : {}),
   });
 }
 

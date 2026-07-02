@@ -3,10 +3,13 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added Mixamo movement-profile extraction for Animation Adventure clips,
+    including motion mode, root/calibrated travel distance, speed, foot-contact
+    windows, vertical bounds, and quarantine metadata.
 
 - **Changed**
-  - (placeholder)
+  - Removed the incompatible basic happy-hand gesture from the farm-adventure
+    allow-list so it cannot be selected for Peasant Girl adventure playback.
 
 - **Fixed**
   - (placeholder)
