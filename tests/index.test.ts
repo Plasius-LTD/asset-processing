@@ -257,6 +257,60 @@ describe("asset processing", () => {
     );
   });
 
+  it("reports missing base-color texture buffers and absent authored textures", () => {
+    const missingBuffer = validateProfessionalCharacterAsset("missing-diffuse-buffer", {
+      materials: [
+        {
+          pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+        },
+      ],
+      textures: [{ source: 0 }],
+      images: [{ bufferView: 1 }],
+      bufferViews: [],
+      meshes: [
+        {
+          primitives: [
+            {
+              attributes: {
+                NORMAL: 1,
+                TEXCOORD_0: 2,
+                JOINTS_0: 3,
+                WEIGHTS_0: 4,
+              },
+            },
+          ],
+        },
+      ],
+      skins: [{ joints: [0, 1, 2] }],
+    });
+
+    expect(missingBuffer.valid).toBe(false);
+    expect(missingBuffer.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "required",
+          path: "$.materials[*].normalTexture",
+        }),
+        expect.objectContaining({
+          code: "missing-reference",
+          path: "$.materials[0].pbrMetallicRoughness.baseColorTexture",
+        }),
+      ]),
+    );
+
+    const absentTexture = validateProfessionalCharacterAsset("untextured-character", {
+      meshes: [{ primitives: [{ attributes: { NORMAL: 1, TEXCOORD_0: 2, JOINTS_0: 3, WEIGHTS_0: 4 } }] }],
+      skins: [{ joints: [0, 1, 2] }],
+    });
+
+    expect(absentTexture.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "required", path: "$.materials[*].pbrMetallicRoughness.baseColorTexture" }),
+        expect.objectContaining({ code: "required", path: "$.materials[*].normalTexture" }),
+      ]),
+    );
+  });
+
   it("accepts root-authored travel metadata and rejects calibrated in-place movement", () => {
     const rootAuthored = extractMixamoAnimationMetadata(
       "female-basic-locomotion-walking",
@@ -306,6 +360,39 @@ describe("asset processing", () => {
     );
   });
 
+  it("rejects root-motion clips that cannot displace or exceed foot-slide tolerance", () => {
+    const rootAuthored = extractMixamoAnimationMetadata(
+      "female-basic-locomotion-walking",
+      {
+        nodes: [{ name: "mixamorig:Hips" }],
+        accessors: [
+          { max: [1.2] },
+          { min: [0, 0, 0], max: [0, 0, 2.4] },
+        ],
+        animations: [
+          {
+            samplers: [{ input: 0, output: 1 }],
+            channels: [{ sampler: 0, target: { node: 0, path: "translation" } }],
+          },
+        ],
+      },
+      {
+        movementCalibration: {
+          motionMode: "root-authored",
+          worldDisplacementAllowed: false,
+          footSlideTolerance: 0.2,
+        },
+      },
+    );
+
+    expect(validateProfessionalRootMotionProfile(rootAuthored)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid-value", path: "$.movementProfile.worldDisplacementAllowed" }),
+        expect.objectContaining({ code: "invalid-value", path: "$.movementProfile.footSlideTolerance" }),
+      ]),
+    );
+  });
+
   it("validates textured grounded environment props", () => {
     const valid = validateEnvironmentPropAsset("farm-crate", texturedSkinnedDocument, {
       bounds: { min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5] },
@@ -328,6 +415,34 @@ describe("asset processing", () => {
       expect.arrayContaining([
         expect.objectContaining({ code: "required", path: "$.materials[*].pbrMetallicRoughness.baseColorTexture" }),
         expect.objectContaining({ code: "invalid-value", path: "$.bounds.min[1]" }),
+      ]),
+    );
+  });
+
+  it("rejects environment props without meshes, normal textures, or valid bounds", () => {
+    const invalid = validateEnvironmentPropAsset("bad-prop", {
+      materials: [
+        {
+          pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          normalTexture: { index: 1 },
+        },
+      ],
+      textures: [{ source: 0 }, { source: 1 }],
+      images: [{ uri: "diffuse.png" }, { bufferView: 9 }],
+      bufferViews: [],
+      meshes: [],
+    }, {
+      bounds: { min: [1, 0, 1], max: [1, 0, 1] },
+      requireTexture: true,
+      requireNormalTexture: true,
+    });
+
+    expect(invalid.valid).toBe(false);
+    expect(invalid.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "required", path: "$.meshes" }),
+        expect.objectContaining({ code: "missing-reference", path: "$.materials[0].normalTexture" }),
+        expect.objectContaining({ code: "invalid-value", path: "$.bounds" }),
       ]),
     );
   });
