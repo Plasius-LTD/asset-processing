@@ -3,6 +3,20 @@
 ## Unreleased
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.7] - 2026-07-03
+
+- **Added**
   - Added professional Animation Adventure GLB material, texture, UV, normal,
     skinning, root-motion, and environment prop validation helpers.
 
@@ -104,3 +118,4 @@
 [0.1.4]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.4
 [0.1.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.5
 [0.1.6]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.6
+[0.1.7]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.7
