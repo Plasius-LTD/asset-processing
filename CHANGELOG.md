@@ -3,10 +3,13 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added professional Animation Adventure GLB material, texture, UV, normal,
+    skinning, root-motion, and environment prop validation helpers.
 
 - **Changed**
-  - (placeholder)
+  - Restored the basic happy-hand gesture to the explicit farm-adventure clip
+    id list so exported gesture clips can be represented and then quarantined
+    through metadata when they are incompatible.
 
 - **Fixed**
   - (placeholder)

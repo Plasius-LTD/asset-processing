@@ -34,6 +34,22 @@ validation, including motion mode, root/calibrated travel distance, expected
 speed, foot-contact windows, vertical bounds, loopability, displacement
 permission, and quarantine reason when a clip must not drive adventure playback.
 
+## Professional Animation Asset Validation
+
+Professional Animation Adventure assets can be checked before renderer mount:
+
+- `extractGltfMaterialTextureMetadata` reports material count, texture/image
+  count, embedded/external image buffers, UVs, normals, skinning primitives,
+  maximum joint count, diffuse/base-color textures, normal textures, and
+  unresolved texture references.
+- `validateProfessionalCharacterAsset` fails characters that are not skinned,
+  lack UVs/normals, omit diffuse or normal textures, or point at missing image
+  buffers.
+- `validateProfessionalRootMotionProfile` rejects travel clips that rely on
+  calibrated in-place motion instead of authored root translation.
+- `validateEnvironmentPropAsset` validates textured farm/environment GLBs,
+  optional normal maps, finite bounds, and ground-level origins.
+
 ## Related Documents
 
 - plasius-ltd-site `docs/Design/unified-ai-asset-pipeline.md`
