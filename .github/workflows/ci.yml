@@ -106,6 +106,9 @@ jobs:
       - name: Build
         run: npm run build --if-present
 
+      - name: Verify public package
+        run: npm run pack:check
+
       - name: Test with coverage
         run: |
           set -euo pipefail

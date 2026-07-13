@@ -3,16 +3,26 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added storage-neutral WGSL shader admission plans, exact archive/matrix/
+    evidence/attestation verification, reflection-generated interface
+    artifacts, immutable GPU asset packages, typed diagnostics, cancellation,
+    bounded resource limits, and same-instance receipt revalidation through a
+    Node-only package subpath.
+  - Added architecture and technical-decision documentation for the trusted
+    extraction, qualification, receipt, promotion, physical-fleet, and
+    additive-matrix boundaries.
 
 - **Changed**
-  - (placeholder)
+  - Extended content-type resolution for canonical WGSL and JSON shader,
+    interface, evidence, and style-profile artifacts.
 
 - **Fixed**
   - (placeholder)
 
 - **Security**
-  - (placeholder)
+  - Bound evidence and attestation URIs to one immutable version root, isolated
+    filesystem admission from the browser-safe root API, and replaced raw
+    dependency failures with stable non-sensitive diagnostics.
 
 ## [0.1.7] - 2026-07-03
 
