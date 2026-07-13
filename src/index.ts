@@ -1,3 +1,8 @@
+import {
+  ASSET_JSON_CONTENT_TYPE,
+  ASSET_WGSL_CONTENT_TYPE,
+} from "@plasius/asset-contracts";
+
 export const ASSET_PROCESSING_PACKAGE = "@plasius/asset-processing";
 
 export const ASSET_PROCESSING_OPERATIONS = Object.freeze([
@@ -215,6 +220,16 @@ export function resolveModelContentType(fileName: string): string {
   const lower = fileName.toLowerCase();
   const extension = Object.keys(MODEL_CONTENT_TYPES).find((candidate) => lower.endsWith(candidate));
   return extension ? MODEL_CONTENT_TYPES[extension as keyof typeof MODEL_CONTENT_TYPES] : "application/octet-stream";
+}
+
+/** Resolves model, WGSL, and JSON lifecycle artifacts without weakening legacy defaults. */
+export function resolveAssetProcessingContentType(fileName: string): string {
+  const modelContentType = resolveModelContentType(fileName);
+  if (modelContentType !== "application/octet-stream") return modelContentType;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".wgsl")) return ASSET_WGSL_CONTENT_TYPE;
+  if (lower.endsWith(".json")) return ASSET_JSON_CONTENT_TYPE;
+  return modelContentType;
 }
 
 function pushAssetIssue(
