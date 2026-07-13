@@ -3,6 +3,20 @@
 ## Unreleased
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.2.0] - 2026-07-13
+
+- **Added**
   - Added storage-neutral WGSL shader admission plans, exact archive/matrix/
     evidence/attestation verification, reflection-generated interface
     artifacts, immutable GPU asset packages, typed diagnostics, cancellation,
@@ -129,3 +143,4 @@
 [0.1.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.5
 [0.1.6]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.6
 [0.1.7]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.1.7
+[0.2.0]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.0

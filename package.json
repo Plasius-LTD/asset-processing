@@ -1,6 +1,6 @@
 {
   "name": "@plasius/asset-processing",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Processing contracts for Plasius model assets and fail-closed WebGPU WGSL shader admission.",
   "type": "module",
   "sideEffects": false,
