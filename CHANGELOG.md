@@ -6,12 +6,13 @@
   - (placeholder)
 
 - **Changed**
-  - (placeholder)
+  - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
 
 - **Fixed**
-  - (placeholder)
+  - Kept the admission-depth regression fixture independent of the upstream canonicaliser's own matching depth guard.
 
 - **Security**
+  - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
   - (placeholder)
 
 ## [0.2.0] - 2026-07-13
