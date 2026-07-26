@@ -754,12 +754,11 @@ describe("WGSL shader admission flow", () => {
   it("rejects deeply nested canonical contract JSON before invoking a matrix validator", async () => {
     const fixture = await createFixture();
     installSuccessfulToolchain(fixture);
-    let nested: unknown = null;
-    for (let depth = 0; depth < 65; depth += 1) nested = { child: nested };
+    const nestedCanonicalJson = `${'{"child":'.repeat(65)}null${"}".repeat(65)}`;
 
     const result = await admitShaderQualification({
       ...fixture.input,
-      matrixBytes: new TextEncoder().encode(canonicalizeGpuContract(nested)),
+      matrixBytes: new TextEncoder().encode(nestedCanonicalJson),
     });
 
     expect(mockedValidateMatrix).not.toHaveBeenCalled();
