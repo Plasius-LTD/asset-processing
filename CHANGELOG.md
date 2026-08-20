@@ -15,6 +15,7 @@
   - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
   - Pinned fixed transitive `brace-expansion` and `nanoid` development-tool versions for the current high-severity denial-of-service advisories.
   - Raised statements and branches coverage thresholds to the package-wide 80% release floor.
+  - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
 
 - **Fixed**
   - Re-derived serialized grid-cell geometry from each source-component extent
@@ -37,6 +38,7 @@
 
 - **Security**
   - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
+  - Removed the npm write-token path, added a fail-closed npm 11.5.1-or-newer OIDC guard, and denied fork PR code access to self-hosted CI.
   - (placeholder)
 
 ## [0.2.0] - 2026-07-13
@@ -56,6 +58,9 @@
     interface, evidence, and style-profile artifacts.
 
 - **Fixed**
+  - Routed same-repository pull-request validation through the allowlisted
+    reusable self-hosted workflow on `main`, restoring runner admission without
+    exposing quarantined capacity to forks or shared npm cache state.
   - (placeholder)
 
 - **Security**

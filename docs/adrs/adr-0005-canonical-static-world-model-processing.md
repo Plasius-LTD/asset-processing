@@ -1,4 +1,4 @@
-# ADR 0004: Canonical Static-World Model Processing
+# ADR 0005: Canonical Static-World Model Processing
 
 ## Status
 
