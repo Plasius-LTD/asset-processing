@@ -40,12 +40,15 @@ Add an additive, pure root-package API for `static-world-v1` processing:
 - Preserve semantic nodes and connected components before splitting oversized
   static geometry on the configured X/Z grid. Movable objects are never
   clipped. Adjacent grid leaves require identical position, normal, UV, and LOD
-  border locks.
-- Keep LOD0 and attempt 50%, 20%, and 8% levels for models with at least 10,000
+  border locks. Retain immutable source-component facts in the plan and
+  re-derive every serialized partition, estimate, parent bound, and seam from
+  them. Use bounded ordinal-derived partition identities rather than embedding
+  provider component IDs in manifest tokens.
+- Keep LOD0 and require 50%, 20%, and 8% attempts for models with at least 10,000
   triangles. Retain only levels with at least 512 triangles, at least 30%
   reduction from the preceding retained level, monotonic measured error, and
-  passing fidelity evidence. Runtime guidance uses 1.5 projected pixels and
-  20% hysteresis.
+  passing fidelity evidence. Models below the threshold have no simplifier
+  attempts. Runtime guidance uses 1.5 projected pixels and 20% hysteresis.
 - Generate collision independently from cleaned LOD0. A signed category policy
   must either require a distinct proxy or explicitly allow none.
 - Require candidate-scoped, content-addressed GLB resources. Assemblies expose
@@ -54,7 +57,10 @@ Add an additive, pure root-package API for `static-world-v1` processing:
 - Hash canonical JSON with standards-based Web Crypto SHA-256. The digest binds
   a deterministic manifest ID, and assembly closure identity includes every
   LOD, collision artifact, child content identity, child manifest reference,
-  hierarchy edge, and transform.
+  hierarchy edge, and transform. Snapshot contract-validated evidence before
+  the first asynchronous hash, reject blocked fidelity, and recompute the
+  manifest digest when reconstructing rollback closure. Identical child
+  instances deduplicate one dependency; conflicting evidence fails closed.
 - Revalidate the final result through
   `createModelProcessingManifest` from `@plasius/asset-contracts` rather than
   duplicating that public contract validator.

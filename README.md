@@ -141,11 +141,16 @@ first. Oversized static geometry is then split on the configured X/Z grid.
 Every adjacent grid leaf receives a deterministic lock for identical border
 positions, normals, UVs, and LOD simplification. Movable geometry is never
 clipped: a movable object that cannot satisfy one leaf fails instead.
-Serialized plans re-derive the complete cell set and exact cell bounds for each
-source component before seam evidence is accepted.
+Plans retain the complete immutable source-component facts used to derive each
+leaf. Serialized plans re-derive exact ordinal partition IDs, the complete cell
+set, cell bounds, estimates, source identity, and parent bounds from that
+separate evidence before seam evidence is accepted. Provider component IDs may
+use the full accepted path-segment grammar and length; bounded ordinal-derived
+partition and seam IDs keep them safe for manifest instance tokens.
 
 `planAdaptiveModelLods` always retains LOD0 and, at 10,000 or more LOD0
-triangles, records attempts at 50%, 20%, and 8%. A candidate level is discarded
+triangles, requires and records all three attempts at 50%, 20%, and 8%. Assets
+below the threshold require zero simplifier attempts. A candidate level is discarded
 when it fails fidelity, saves less than 30% from the preceding retained level,
 falls below 512 triangles, or regresses geometric error. Exact counts and
 measured error remain in the plan. `selectAdaptiveModelLod` selects the
@@ -158,12 +163,20 @@ is mandatory unless signed category-policy evidence explicitly allows
 
 `createCanonicalModelRuntimePlan` revalidates all serialized subplans, checks
 the exact format/converter/LOD0 binding, requires all runtime artifacts to be
-content-addressed candidate-scoped GLBs, and delegates final contract
-validation to `@plasius/asset-contracts`. It uses standards-based Web Crypto
-SHA-256 over canonical JSON to create a stable manifest identity. Assembly
-children are ordered by planned partition rather than caller order, and
-`collectModelRollbackClosure` returns the exact parent, LOD, collision, and
-child-reference closure for atomic promotion or rollback. A child entry labels
+content-addressed candidate-scoped GLBs, applies the selected byte limit to
+every retained leaf GLB, and rejects a blocked fidelity gate. Converter,
+fidelity, gate, and timestamp evidence is contract-validated and frozen before
+the first asynchronous hash so caller mutation cannot change the result. Final
+contract validation remains delegated to `@plasius/asset-contracts`.
+
+The runtime planner uses standards-based Web Crypto SHA-256 over canonical JSON
+to create a stable manifest identity. Assembly children are ordered by planned
+partition rather than caller order. `collectModelRollbackClosure` is
+asynchronous: it recomputes that digest from the normalized manifest before
+returning the exact parent, LOD, collision, and child-reference closure for
+atomic promotion or rollback. Repeated assembly instances of the same immutable
+leaf share one deduplicated dependency entry; the same URI with conflicting
+digest evidence fails. A child entry labels
 its digest as `asset-content`; it does not misrepresent the child model hash as
 the bytes hash of its separately stored manifest. The parent entry similarly
 labels its digest as `manifest-identity`, while concrete GLBs use

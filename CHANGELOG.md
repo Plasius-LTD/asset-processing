@@ -20,6 +20,19 @@
   - Re-derived serialized grid-cell geometry from each source-component extent
     so forged or drifted partition bounds cannot retain apparently valid seam
     evidence.
+  - Bound every serialized partition, estimate, parent bound, and seam to a
+    separate immutable source-component closure; rejected duplicate unsplit
+    sources and symmetric outer-bound drift.
+  - Generated bounded ordinal partition/seam identities so every accepted
+    component path segment remains processable without token or length drift.
+  - Required all three adaptive simplifier attempts at or above 10,000 LOD0
+    triangles, zero attempts below that threshold, and the selected byte limit
+    for every retained leaf GLB.
+  - Snapshotted converter/fidelity evidence before asynchronous hashing and
+    rejected blocked fidelity gates before returning runtime artifacts.
+  - Recomputed manifest SHA-256 during asynchronous rollback reconstruction,
+    deduplicated identical instanced-child dependencies, and rejected
+    conflicting duplicate resource evidence.
   - Kept the admission-depth regression fixture independent of the upstream canonicaliser's own matching depth guard.
 
 - **Security**

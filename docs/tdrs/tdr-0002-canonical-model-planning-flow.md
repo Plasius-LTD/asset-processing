@@ -21,7 +21,8 @@ conversion evidence and immutable GLB outputs into a canonical
 2. Signed provider-format evidence bound to the exact source SHA-256, released
    adapter, adapter version, and GLB target.
 3. Finite cleaned connected-component facts, including semantic identity,
-   mobility, bounds, triangles, bytes, and texture facts.
+   mobility, bounds, triangles, bytes, and texture facts. These facts remain in
+   the immutable plan as the independent source for serialized revalidation.
 4. Candidate-scoped content-addressed GLB resources for LOD0 and every attempted
    retained LOD.
 5. Exact geometric-error and fidelity results for every simplifier attempt.
@@ -46,14 +47,18 @@ conversion evidence and immutable GLB outputs into a canonical
    estimates are distributed deterministically, and adjacent cells receive
    X/Z seam locks for positions, normals, UVs, and simplification. Oversized
    movable components fail.
-4. `planAdaptiveModelLods` validates LOD0 and up to three unique candidate-
-   scoped GLBs. It records requested target and exact actual triangle counts,
+4. `planAdaptiveModelLods` validates LOD0 and requires exactly three unique
+   candidate-scoped GLB attempts at or above 10,000 triangles (zero below the
+   threshold). It records requested target and exact actual triangle counts,
    measured error, fidelity result, retained level, or discard reason.
 5. `createModelCollisionPlan` requires policy agreement and ensures a proxy is
    not the LOD0 resource.
 6. `createCanonicalModelRuntimePlan` revalidates serialized cleanup, profile,
-   partition, seam, LOD-attempt, collision, format, converter, child, transform,
-   and resource evidence. Array ordering from a caller is not authority.
+   source-component, partition, seam, LOD-attempt, collision, format, converter,
+   child, transform, and resource evidence. It freezes validated converter and
+   fidelity inputs before the first asynchronous hash, rejects blocked fidelity,
+   and applies the selected byte limit to every retained leaf GLB. Array ordering
+   and later caller mutation are not authority.
 7. For a leaf, closure hash equals LOD0 content hash as required by the shared
    contract. For an assembly, canonical JSON binds parent, LODs, collision,
    sorted children, hierarchy, transforms, child content identities, and child
@@ -63,9 +68,11 @@ conversion evidence and immutable GLB outputs into a canonical
    shared contract validation. Durable orchestration persists and reuses all
    evidence timestamps for retries; changing immutable evidence, including a
    timestamp, intentionally changes identity.
-9. `collectModelRollbackClosure` verifies the digest-to-ID binding and lists
-   the manifest, LODs, collision, and sorted child manifest references. Entries
-   distinguish manifest-identity, concrete resource-byte, and child
+9. The asynchronous `collectModelRollbackClosure` recomputes the normalized
+   manifest SHA-256, verifies its digest-to-ID binding, and lists the manifest,
+   LODs, collision, and sorted child manifest references. Identical instanced
+   children deduplicate one dependency; conflicting duplicate evidence fails.
+   Entries distinguish manifest-identity, concrete resource-byte, and child
    asset-content digests.
 
 ## Runtime LOD Guidance
@@ -83,6 +90,8 @@ Planning returns no partial manifest when any of these occur:
 - unsupported, metadata-only, or adapter-drifted source format;
 - malformed or mismatched signed evidence;
 - non-finite, non-floor-centred, or inconsistent geometry/texture facts;
+- missing or drifted immutable source-component evidence, duplicate unsplit
+  source partitions, or non-deterministic derived identities;
 - raised or incompatible processing profile;
 - movable-object clipping or a static leaf that still exceeds limits after
   grid partitioning;
@@ -91,11 +100,13 @@ Planning returns no partial manifest when any of these occur:
 - missing/duplicate assembly output, unsafe child reference, invalid transform,
   child hierarchy failure, or incomplete seam-lock set;
 - non-contiguous LODs, insufficient reduction, invalid error ordering, or
-  retained-attempt audit drift;
+  missing mandatory attempts, retained-attempt audit drift, or an over-limit
+  retained leaf GLB;
 - collision-policy mismatch or collision/LOD0 aliasing;
 - converter/format/source/output mismatch, fidelity gate failure, or shared
   manifest validation failure; or
-- digest/manifest identity mismatch during rollback-closure reconstruction.
+- blocked fidelity, evidence mutation during asynchronous hashing, or a
+  digest/manifest identity mismatch during rollback-closure reconstruction.
 
 ## Side-Effect and Security Boundary
 

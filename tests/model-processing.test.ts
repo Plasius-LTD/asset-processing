@@ -8,6 +8,7 @@ import type {
   ModelResourceRef,
   ModelTransform,
 } from "@plasius/asset-contracts";
+import { MODEL_RESOLUTION_CONTRACT_VERSION } from "@plasius/asset-contracts";
 import {
   CANONICAL_MODEL_CLEANUP_STEPS,
   STATIC_WORLD_V1_PROCESSING_PROFILE,
@@ -237,6 +238,14 @@ describe("canonical static-world model processing", () => {
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first.manifest)).toBe(true);
     expect(Object.isFrozen(first.rollbackClosure)).toBe(true);
+
+    const driftedManifest = {
+      ...structuredClone(first.manifest),
+      processedAt: "2026-08-21T12:00:00.000Z",
+    };
+    await expect(collectModelRollbackClosure(driftedManifest, first.manifestDigest)).rejects.toThrow(
+      /digest.*manifest|exactly bind/iu,
+    );
   });
 
   it("retains adaptive LODs using exact counts and records discarded attempts", () => {
@@ -305,11 +314,18 @@ describe("canonical static-world model processing", () => {
           geometricErrorMetres: 0.02,
           fidelityPassed: true,
         },
+        {
+          resource: glbResource("3".repeat(64), 8_000),
+          triangleCount: 8_000,
+          geometricErrorMetres: 0.04,
+          fidelityPassed: false,
+        },
       ],
     });
     expect(fidelityAndFloor.attempts.map((attempt) => attempt.reasonCode)).toEqual([
       "fidelity-check-failed",
       "below-minimum-triangles",
+      "fidelity-check-failed",
     ]);
 
     const errorRegression = planAdaptiveModelLods({
@@ -334,6 +350,12 @@ describe("canonical static-world model processing", () => {
           geometricErrorMetres: 0.05,
           fidelityPassed: true,
         },
+        {
+          resource: glbResource("6".repeat(64), 8_000),
+          triangleCount: 8_000,
+          geometricErrorMetres: 0.2,
+          fidelityPassed: false,
+        },
       ],
     });
     expect(errorRegression.attempts[1]?.reasonCode).toBe("geometric-error-regressed");
@@ -349,18 +371,31 @@ describe("canonical static-world model processing", () => {
         triangleCount: 9_999,
         geometricErrorMetres: 0,
       },
-      attempts: [
-        {
-          resource: glbResource("8".repeat(64)),
-          triangleCount: 4_999,
-          geometricErrorMetres: 0.01,
-          fidelityPassed: true,
-        },
-      ],
+      attempts: [],
     });
 
     expect(plan.lods).toHaveLength(1);
-    expect(plan.attempts[0]?.reasonCode).toBe("lod0-below-adaptive-threshold");
+    expect(plan.attempts).toEqual([]);
+    expect(() => planAdaptiveModelLods({
+      resolutionId: RESOLUTION_ID,
+      candidateId: CANDIDATE_ID,
+      lod0: plan.lods[0]!,
+      attempts: [{
+        resource: glbResource("8".repeat(64)),
+        triangleCount: 4_999,
+        geometricErrorMetres: 0.01,
+        fidelityPassed: true,
+      }],
+    })).toThrow(/below.*threshold.*must not|zero.*attempt/iu);
+    expect(() => planAdaptiveModelLods({
+      resolutionId: RESOLUTION_ID,
+      candidateId: CANDIDATE_ID,
+      lod0: {
+        ...plan.lods[0]!,
+        triangleCount: 10_000,
+      },
+      attempts: [],
+    })).toThrow(/three.*attempt/iu);
     expect(() => validateAdaptiveModelLods([
       { ...plan.lods[0]!, level: 1 },
     ])).toThrow(/contiguous.*LOD0/iu);
@@ -431,6 +466,34 @@ describe("canonical static-world model processing", () => {
     ]);
     expect(semantic.seamLocks).toEqual([]);
     expect(semantic.boundsMetres).toEqual({ min: [-2, 0, -1], max: [2, 1, 1] });
+
+    const leaf = planHybridModelPartitions({
+      profile: STATIC_WORLD_V1_PROCESSING_PROFILE,
+      components: [{
+        componentId: "single-body",
+        semanticNodeId: "single-body",
+        connectedComponentId: "single-body",
+        mobility: "static",
+        boundsMetres: { min: [-1, 0, -1], max: [1, 1, 1] },
+        triangleCount: 1_000,
+        byteLength: 1_000,
+        textureByteLength: 0,
+        maxTextureDimensionPx: 0,
+      }],
+    });
+    expect(() => validateHybridModelPartitionPlan({
+      ...leaf,
+      kind: "assembly",
+      partitions: [
+        leaf.partitions[0]!,
+        {
+          ...leaf.partitions[0]!,
+          partitionId: "part-forged-duplicate",
+          estimatedTriangleCount: 1,
+          estimatedByteLength: 1,
+        },
+      ],
+    })).toThrow(/source component.*exactly|partition.*source/iu);
   });
 
   it("grid-partitions an oversized static building and locks every shared border", () => {
@@ -481,6 +544,27 @@ describe("canonical static-world model processing", () => {
     expect(() => validateHybridModelPartitionPlan({ ...grid, partitions: forgedPartitions })).toThrow(
       /grid.*bounds.*cell/iu,
     );
+
+    const symmetricallyForgedPartitions = grid.partitions.map((partition) => ({
+      ...partition,
+      boundsMetres: {
+        min: [
+          partition.gridCell?.x === -2 ? -39 : partition.boundsMetres.min[0],
+          partition.boundsMetres.min[1],
+          partition.boundsMetres.min[2],
+        ],
+        max: [
+          partition.gridCell?.x === 1 ? 39 : partition.boundsMetres.max[0],
+          partition.boundsMetres.max[1],
+          partition.boundsMetres.max[2],
+        ],
+      },
+    }));
+    expect(() => validateHybridModelPartitionPlan({
+      ...grid,
+      boundsMetres: { min: [-39, 0, -16], max: [39, 20, 16] },
+      partitions: symmetricallyForgedPartitions,
+    })).toThrow(/source component.*bounds|parent bounds.*source/iu);
   });
 
   it("never clips movable objects and rejects non-finite or over-budget component evidence", () => {
@@ -545,6 +629,27 @@ describe("canonical static-world model processing", () => {
         boundsMetres: { min: [-1e20, 0, -1], max: [1e20, 1, 1] },
       }],
     })).toThrow(/partition grid extent/iu);
+
+    for (const componentId of ["wall~shell", "a".repeat(124)]) {
+      const valid = planHybridModelPartitions({
+        profile: STATIC_WORLD_V1_PROCESSING_PROFILE,
+        components: [{
+          ...oversizedMovable,
+          componentId,
+          connectedComponentId: "bounded-connected-id",
+          semanticNodeId: undefined,
+          mobility: "static",
+        }],
+      });
+      expect(valid.partitions.every((partition) => (
+        partition.partitionId.length <= 128
+        && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(partition.partitionId)
+      ))).toBe(true);
+      expect(valid.seamLocks.every((lock) => (
+        lock.seamId.length <= 128
+        && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(lock.seamId)
+      ))).toBe(true);
+    }
   });
 
   it("validates separate proxy and explicitly authorised collision-none policies", () => {
@@ -666,6 +771,18 @@ describe("canonical static-world model processing", () => {
           geometricErrorMetres: 0.02,
           fidelityPassed: true,
         },
+        {
+          resource: glbResource("8".repeat(64), 3_000),
+          triangleCount: 8_000,
+          geometricErrorMetres: 0.04,
+          fidelityPassed: false,
+        },
+        {
+          resource: glbResource("9".repeat(64), 2_000),
+          triangleCount: 3_200,
+          geometricErrorMetres: 0.08,
+          fidelityPassed: false,
+        },
       ],
     });
     const collision = createModelCollisionPlan({
@@ -691,7 +808,7 @@ describe("canonical static-world model processing", () => {
     } as const;
 
     const runtime = await createCanonicalModelRuntimePlan(runtimeInput);
-    const rollback = collectModelRollbackClosure(runtime.manifest, runtime.manifestDigest);
+    const rollback = await collectModelRollbackClosure(runtime.manifest, runtime.manifestDigest);
     const repeated = await createCanonicalModelRuntimePlan({
       ...runtimeInput,
       partitionOutputs: [...partitionOutputs].reverse(),
@@ -714,6 +831,52 @@ describe("canonical static-world model processing", () => {
     expect(repeated.manifest.children.map((child) => child.instanceId)).toEqual(
       runtime.manifest.children.map((child) => child.instanceId),
     );
+
+    const sharedAssetRef = {
+      contractVersion: MODEL_RESOLUTION_CONTRACT_VERSION,
+      assetId: "shared-building-leaf",
+      version: "1.0.0",
+      kind: "leaf",
+      contentHash: "7".repeat(64),
+      runtimeManifestUri: "mcp://models/catalog/shared-building-leaf/versions/1.0.0/manifest",
+    } as const;
+    const instanced = await createCanonicalModelRuntimePlan({
+      ...runtimeInput,
+      partitionOutputs: partitions.partitions.map((partition) => ({
+        partitionId: partition.partitionId,
+        assetRef: sharedAssetRef,
+        transform: IDENTITY_TRANSFORM,
+      })),
+    });
+    expect(instanced.manifest.children).toHaveLength(2);
+    expect(instanced.rollbackClosure.filter((entry) => entry.kind === "child-manifest")).toHaveLength(1);
+    await expect(createCanonicalModelRuntimePlan({
+      ...runtimeInput,
+      partitionOutputs: partitions.partitions.map((partition, index) => ({
+        partitionId: partition.partitionId,
+        assetRef: {
+          ...sharedAssetRef,
+          contentHash: String(index + 6).repeat(64),
+        },
+        transform: IDENTITY_TRANSFORM,
+      })),
+    })).rejects.toThrow(/conflicting duplicate resource/iu);
+
+    const mutableConverter = converter();
+    const mutationAttempt = createCanonicalModelRuntimePlan({
+      ...runtimeInput,
+      converter: mutableConverter,
+    });
+    (mutableConverter as { id: string }).id = "blender-lts";
+    (mutableConverter as { version: string }).version = "9.9.9";
+    (mutableConverter as { sourceFormat: string }).sourceFormat = "blend";
+    const mutationSafe = await mutationAttempt;
+    expect(mutationSafe.cleanup.formatEvidence.adapterId).toBe("assimp-importer");
+    expect(mutationSafe.manifest.converter).toMatchObject({
+      id: "assimp-importer",
+      version: "1.2.0",
+      sourceFormat: "obj",
+    });
   });
 
   it("revalidates serialized adaptive audit evidence and rejects drift", () => {
@@ -721,31 +884,51 @@ describe("canonical static-world model processing", () => {
       resolutionId: RESOLUTION_ID,
       candidateId: CANDIDATE_ID,
       lod0: { level: 0, resource: glbResource(LOD0_HASH), triangleCount: 20_000, geometricErrorMetres: 0 },
-      attempts: [{
-        resource: glbResource("a".repeat(64)),
-        triangleCount: 10_000,
-        geometricErrorMetres: 0.02,
-        fidelityPassed: true,
-      }],
+      attempts: [
+        {
+          resource: glbResource("a".repeat(64)),
+          triangleCount: 10_000,
+          geometricErrorMetres: 0.02,
+          fidelityPassed: true,
+        },
+        {
+          resource: glbResource("b".repeat(64)),
+          triangleCount: 4_000,
+          geometricErrorMetres: 0.04,
+          fidelityPassed: false,
+        },
+        {
+          resource: glbResource("c".repeat(64)),
+          triangleCount: 1_600,
+          geometricErrorMetres: 0.08,
+          fidelityPassed: false,
+        },
+      ],
     });
     expect(validateAdaptiveModelLodPlan(plan)).toEqual(plan);
     expect(() => validateAdaptiveModelLodPlan({
       ...plan,
-      attempts: [{ ...plan.attempts[0]!, targetTriangleCount: 9_999 }],
+      attempts: [{ ...plan.attempts[0]!, targetTriangleCount: 9_999 }, ...plan.attempts.slice(1)],
     })).toThrow(/target triangle count/iu);
     expect(() => validateAdaptiveModelLodPlan({
       ...plan,
-      attempts: [{ ...plan.attempts[0]!, retained: false, retainedLevel: undefined, reasonCode: undefined }],
+      attempts: [
+        { ...plan.attempts[0]!, retained: false, retainedLevel: undefined, reasonCode: undefined },
+        ...plan.attempts.slice(1),
+      ],
     })).toThrow(/retained outcome/iu);
     expect(() => validateAdaptiveModelLodPlan({
       ...plan,
-      attempts: [{
-        ...plan.attempts[0]!,
-        resource: {
-          ...plan.attempts[0]!.resource,
-          uri: plan.attempts[0]!.resource.uri.replace(`/candidates/${CANDIDATE_ID}/`, "/candidates/other-candidate/"),
+      attempts: [
+        {
+          ...plan.attempts[0]!,
+          resource: {
+            ...plan.attempts[0]!.resource,
+            uri: plan.attempts[0]!.resource.uri.replace(`/candidates/${CANDIDATE_ID}/`, "/candidates/other-candidate/"),
+          },
         },
-      }],
+        ...plan.attempts.slice(1),
+      ],
     })).toThrow(/candidate scope/iu);
     expect(() => planAdaptiveModelLods({
       resolutionId: RESOLUTION_ID,
@@ -777,7 +960,7 @@ describe("canonical static-world model processing", () => {
     const runtime = await createCanonicalModelRuntimePlan(diagnosticInput);
     expect(runtime.manifest.converter.diagnostics.map((item) => item.code)).toEqual(["a-first", "z-last"]);
     expect(runtime.manifest.converter.losses.map((item) => item.code)).toEqual(["a-loss", "z-loss"]);
-    expect(() => collectModelRollbackClosure(runtime.manifest, "0".repeat(64))).toThrow(/exactly bind/iu);
+    await expect(collectModelRollbackClosure(runtime.manifest, "0".repeat(64))).rejects.toThrow(/exactly bind/iu);
 
     const tighter = createStaticWorldV1ProcessingProfile({ maxTriangles: 7_000 });
     await expect(createCanonicalModelRuntimePlan({
@@ -805,6 +988,84 @@ describe("canonical static-world model processing", () => {
       ...smallRuntimeInput(),
       processedAt: "2026-08-19T12:00:00.000Z",
     })).rejects.toThrow(/must not precede/iu);
+    await expect(createCanonicalModelRuntimePlan({
+      ...smallRuntimeInput(),
+      converter: {
+        ...converter(),
+        diagnostics: [{ severity: "blocking", code: "invalid-geometry", message: "Geometry is invalid." }],
+      },
+      fidelityEvidence: [
+        { aspect: "geometry", outcome: "lost", message: "Geometry is invalid." },
+        ...preservedFidelity().slice(1),
+      ],
+      fidelityGate: { ...fidelityGate(), outcome: "blocked" },
+    })).rejects.toThrow(/blocked.*fidelity|fidelity.*blocked/iu);
+  });
+
+  it("rejects retained leaf GLBs above the selected byte limit", async () => {
+    const profile = createStaticWorldV1ProcessingProfile();
+    const partitions = planHybridModelPartitions({
+      profile,
+      components: [{
+        componentId: "high-poly-leaf",
+        connectedComponentId: "high-poly-leaf",
+        mobility: "static",
+        boundsMetres: { min: [-1, 0, -1], max: [1, 1, 1] },
+        triangleCount: 100_000,
+        byteLength: 8_000,
+        textureByteLength: 0,
+        maxTextureDimensionPx: 0,
+      }],
+    });
+    const cleanup = createCanonicalModelCleanupPlan({
+      formatEvidence: validateModelFormatEvidence(formatEvidence()),
+      profile,
+    });
+    const lods = planAdaptiveModelLods({
+      resolutionId: RESOLUTION_ID,
+      candidateId: CANDIDATE_ID,
+      lod0: { level: 0, resource: glbResource(LOD0_HASH), triangleCount: 100_000, geometricErrorMetres: 0 },
+      attempts: [
+        {
+          resource: glbResource("4".repeat(64), 500 * 1024 * 1024),
+          triangleCount: 50_000,
+          geometricErrorMetres: 0.01,
+          fidelityPassed: true,
+        },
+        {
+          resource: glbResource("5".repeat(64)),
+          triangleCount: 20_000,
+          geometricErrorMetres: 0.02,
+          fidelityPassed: false,
+        },
+        {
+          resource: glbResource("6".repeat(64)),
+          triangleCount: 8_000,
+          geometricErrorMetres: 0.04,
+          fidelityPassed: false,
+        },
+      ],
+    });
+    await expect(createCanonicalModelRuntimePlan({
+      resolutionId: RESOLUTION_ID,
+      candidateId: CANDIDATE_ID,
+      profile,
+      cleanup,
+      partitions,
+      partitionOutputs: [],
+      lods,
+      collision: createModelCollisionPlan({
+        lod0Sha256: LOD0_HASH,
+        record: { kind: "none" },
+        policy: collisionPolicy("none-allowed"),
+      }),
+      textureByteLength: 0,
+      maxTextureDimensionPx: 0,
+      converter: converter(),
+      fidelityEvidence: preservedFidelity(),
+      fidelityGate: fidelityGate(),
+      processedAt: EVALUATED_AT,
+    })).rejects.toThrow(/GLB.*byte|runtime.*limit/iu);
   });
 
   it("rejects missing assembly children, unsafe refs, and incompatible evidence", async () => {

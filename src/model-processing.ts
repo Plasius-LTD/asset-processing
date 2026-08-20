@@ -28,6 +28,7 @@ const CANONICAL_ORIGIN_TOLERANCE_METRES = 1e-6;
 const MAX_PARTITIONS = 256;
 const MAX_COMPONENTS = 256;
 const FORMAT_MATRIX_ID = "provider-format-v1";
+const ZERO_SHA256 = "0".repeat(64);
 
 const FORMAT_ADAPTERS = Object.freeze({
   glb: "gltf-glb-adapter",
@@ -180,6 +181,7 @@ export interface HybridModelPartitionPlan {
   readonly strategy: "semantic-first-connected-then-grid";
   readonly kind: "leaf" | "assembly";
   readonly profile: StaticWorldV1ProcessingProfile;
+  readonly sourceComponents: readonly ModelGeometryComponentInput[];
   readonly boundsMetres: ModelBoundsMetres;
   readonly partitions: readonly HybridModelPartition[];
   readonly seamLocks: readonly ModelPartitionSeamLock[];
@@ -201,7 +203,6 @@ export interface AdaptiveModelLodAttemptInput {
 
 /** Stable reason explaining why an attempted simplification was not retained. */
 export type AdaptiveModelLodDiscardReason =
-  | "lod0-below-adaptive-threshold"
   | "fidelity-check-failed"
   | "below-minimum-triangles"
   | "insufficient-reduction"
@@ -700,6 +701,10 @@ function encodeGridCoordinate(value: number): string {
   return value < 0 ? `n${Math.abs(value)}` : `p${value}`;
 }
 
+function encodeComponentOrdinal(index: number): string {
+  return `c${index.toString().padStart(3, "0")}`;
+}
+
 interface GridPartitionInternal extends HybridModelPartition {
   readonly gridCell: Readonly<{ readonly x: number; readonly z: number }>;
 }
@@ -724,6 +729,7 @@ function distributeInteger(total: number, index: number, count: number): number 
 function createGridPartitions(
   component: ModelGeometryComponentInput,
   profile: StaticWorldV1ProcessingProfile,
+  componentIndex: number,
 ): readonly GridPartitionInternal[] {
   const xCells = gridIndexRange(component.boundsMetres.min[0], component.boundsMetres.max[0], profile.maxPartitionCellMetres);
   const zCells = gridIndexRange(component.boundsMetres.min[2], component.boundsMetres.max[2], profile.maxPartitionCellMetres);
@@ -742,7 +748,7 @@ function createGridPartitions(
     const minZ = Math.max(component.boundsMetres.min[2], cell.z * profile.maxPartitionCellMetres);
     const maxZ = Math.min(component.boundsMetres.max[2], (cell.z + 1) * profile.maxPartitionCellMetres);
     const partition: GridPartitionInternal = {
-      partitionId: `part-${component.componentId}-x${encodeGridCoordinate(cell.x)}-z${encodeGridCoordinate(cell.z)}`,
+      partitionId: `part-${encodeComponentOrdinal(componentIndex)}-x${encodeGridCoordinate(cell.x)}-z${encodeGridCoordinate(cell.z)}`,
       method: "grid",
       sourceComponentId: component.componentId,
       ...(component.semanticNodeId === undefined ? {} : { semanticNodeId: component.semanticNodeId }),
@@ -767,9 +773,9 @@ function createGridPartitions(
   });
 }
 
-function createUnsplitPartition(component: ModelGeometryComponentInput): HybridModelPartition {
+function createUnsplitPartition(component: ModelGeometryComponentInput, componentIndex: number): HybridModelPartition {
   return {
-    partitionId: `part-${component.componentId}`,
+    partitionId: `part-${encodeComponentOrdinal(componentIndex)}`,
     method: component.semanticNodeId === undefined ? "connected" : "semantic",
     sourceComponentId: component.componentId,
     ...(component.semanticNodeId === undefined ? {} : { semanticNodeId: component.semanticNodeId }),
@@ -783,8 +789,13 @@ function createUnsplitPartition(component: ModelGeometryComponentInput): HybridM
   };
 }
 
-function createSeamLocks(partitions: readonly HybridModelPartition[], cellMetres: number): readonly ModelPartitionSeamLock[] {
+function createSeamLocks(
+  partitions: readonly HybridModelPartition[],
+  cellMetres: number,
+  sourceComponents: readonly ModelGeometryComponentInput[],
+): readonly ModelPartitionSeamLock[] {
   const locks: ModelPartitionSeamLock[] = [];
+  const sourceIndexes = new Map(sourceComponents.map((component, index) => [component.componentId, index]));
   const gridGroups = new Map<string, GridPartitionInternal[]>();
   for (const partition of partitions) {
     if (partition.method !== "grid" || partition.gridCell === undefined) continue;
@@ -793,6 +804,11 @@ function createSeamLocks(partitions: readonly HybridModelPartition[], cellMetres
     gridGroups.set(partition.sourceComponentId, existing);
   }
   for (const [componentId, group] of [...gridGroups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    const componentIndex = sourceIndexes.get(componentId);
+    if (componentIndex === undefined) {
+      throw new Error("grid seam planning requires immutable source-component evidence.");
+    }
+    const componentToken = encodeComponentOrdinal(componentIndex);
     const byCell = new Map(group.map((partition) => [
       `${partition.gridCell.x},${partition.gridCell.z}`,
       partition,
@@ -801,7 +817,7 @@ function createSeamLocks(partitions: readonly HybridModelPartition[], cellMetres
       const xNeighbour = byCell.get(`${partition.gridCell.x + 1},${partition.gridCell.z}`);
       if (xNeighbour !== undefined) {
         locks.push({
-          seamId: `seam-${componentId}-x${encodeGridCoordinate(partition.gridCell.x + 1)}-z${encodeGridCoordinate(partition.gridCell.z)}`,
+          seamId: `seam-${componentToken}-x${encodeGridCoordinate(partition.gridCell.x + 1)}-z${encodeGridCoordinate(partition.gridCell.z)}`,
           axis: "X",
           coordinateMetres: (partition.gridCell.x + 1) * cellMetres,
           partitionIds: [partition.partitionId, xNeighbour.partitionId],
@@ -812,7 +828,7 @@ function createSeamLocks(partitions: readonly HybridModelPartition[], cellMetres
       const zNeighbour = byCell.get(`${partition.gridCell.x},${partition.gridCell.z + 1}`);
       if (zNeighbour !== undefined) {
         locks.push({
-          seamId: `seam-${componentId}-z${encodeGridCoordinate(partition.gridCell.z + 1)}-x${encodeGridCoordinate(partition.gridCell.x)}`,
+          seamId: `seam-${componentToken}-z${encodeGridCoordinate(partition.gridCell.z + 1)}-x${encodeGridCoordinate(partition.gridCell.x)}`,
           axis: "Z",
           coordinateMetres: (partition.gridCell.z + 1) * cellMetres,
           partitionIds: [partition.partitionId, zNeighbour.partitionId],
@@ -825,13 +841,43 @@ function createSeamLocks(partitions: readonly HybridModelPartition[], cellMetres
   return locks.sort((left, right) => left.seamId.localeCompare(right.seamId));
 }
 
-function approximatelyEqual(left: number, right: number): boolean {
-  return Math.abs(left - right) <= CANONICAL_ORIGIN_TOLERANCE_METRES;
+function compareModelComponents(
+  left: ModelGeometryComponentInput,
+  right: ModelGeometryComponentInput,
+): number {
+  return (left.semanticNodeId ?? left.connectedComponentId).localeCompare(
+    right.semanticNodeId ?? right.connectedComponentId,
+  )
+    || left.connectedComponentId.localeCompare(right.connectedComponentId)
+    || left.componentId.localeCompare(right.componentId);
 }
 
-function validateGridPartitionGeometry(
+function expectedPartitionsForSource(
+  component: ModelGeometryComponentInput,
+  profile: StaticWorldV1ProcessingProfile,
+  componentIndex: number,
+): readonly HybridModelPartition[] {
+  if (component.maxTextureDimensionPx > profile.maxTextureDimensionPx) {
+    throw new Error("source component texture dimensions exceed the static-world-v1 texture limit.");
+  }
+  const oversized = exceedsLeafLimits(component, profile);
+  if (component.mobility === "movable" && oversized) {
+    const width = component.boundsMetres.max[0] - component.boundsMetres.min[0];
+    const depth = component.boundsMetres.max[2] - component.boundsMetres.min[2];
+    if (width > profile.maxPartitionCellMetres || depth > profile.maxPartitionCellMetres) {
+      throw new Error("movable objects cannot be clipped across static partition cells.");
+    }
+    throw new Error("movable object exceeds static-world-v1 leaf limits and cannot be split.");
+  }
+  return oversized
+    ? createGridPartitions(component, profile, componentIndex)
+    : [createUnsplitPartition(component, componentIndex)];
+}
+
+function validatePartitionsAgainstSources(
   partitions: readonly HybridModelPartition[],
-  cellMetres: number,
+  sourceComponents: readonly ModelGeometryComponentInput[],
+  profile: StaticWorldV1ProcessingProfile,
 ): void {
   const groups = new Map<string, HybridModelPartition[]>();
   for (const partition of partitions) {
@@ -839,49 +885,20 @@ function validateGridPartitionGeometry(
     group.push(partition);
     groups.set(partition.sourceComponentId, group);
   }
-  for (const group of groups.values()) {
-    const grid = group.filter((partition): partition is GridPartitionInternal => (
-      partition.method === "grid" && partition.gridCell !== undefined
-    ));
-    if (grid.length === 0) continue;
-    if (grid.length !== group.length || grid.length < 2) {
-      throw new Error("grid partition groups must contain only two or more grid leaves from one source component.");
-    }
-    const first = grid[0]!;
-    if (grid.some((partition) => (
-      partition.connectedComponentId !== first.connectedComponentId
-      || partition.semanticNodeId !== first.semanticNodeId
-      || partition.mobility !== "static"
-      || !approximatelyEqual(partition.boundsMetres.min[1], first.boundsMetres.min[1])
-      || !approximatelyEqual(partition.boundsMetres.max[1], first.boundsMetres.max[1])
-    ))) {
-      throw new Error("grid partition groups must preserve one static source identity and Y extent.");
-    }
-    const groupBounds = {
-      minX: Math.min(...grid.map((partition) => partition.boundsMetres.min[0])),
-      maxX: Math.max(...grid.map((partition) => partition.boundsMetres.max[0])),
-      minZ: Math.min(...grid.map((partition) => partition.boundsMetres.min[2])),
-      maxZ: Math.max(...grid.map((partition) => partition.boundsMetres.max[2])),
-    };
-    const xCells = gridIndexRange(groupBounds.minX, groupBounds.maxX, cellMetres);
-    const zCells = gridIndexRange(groupBounds.minZ, groupBounds.maxZ, cellMetres);
-    const expectedCells = new Set(xCells.flatMap((x) => zCells.map((z) => `${x},${z}`)));
-    const actualCells = new Set(grid.map((partition) => `${partition.gridCell.x},${partition.gridCell.z}`));
-    if (expectedCells.size !== grid.length || actualCells.size !== grid.length
-      || [...expectedCells].some((cell) => !actualCells.has(cell))) {
-      throw new Error("grid partition cells must form the complete bounded source-component grid.");
-    }
-    for (const partition of grid) {
-      const expectedMinX = Math.max(groupBounds.minX, partition.gridCell.x * cellMetres);
-      const expectedMaxX = Math.min(groupBounds.maxX, (partition.gridCell.x + 1) * cellMetres);
-      const expectedMinZ = Math.max(groupBounds.minZ, partition.gridCell.z * cellMetres);
-      const expectedMaxZ = Math.min(groupBounds.maxZ, (partition.gridCell.z + 1) * cellMetres);
-      if (!approximatelyEqual(partition.boundsMetres.min[0], expectedMinX)
-        || !approximatelyEqual(partition.boundsMetres.max[0], expectedMaxX)
-        || !approximatelyEqual(partition.boundsMetres.min[2], expectedMinZ)
-        || !approximatelyEqual(partition.boundsMetres.max[2], expectedMaxZ)) {
-        throw new Error("grid partition bounds must match its declared cell and source-component extent.");
-      }
+  const sourceIds = new Set(sourceComponents.map((component) => component.componentId));
+  if ([...groups.keys()].some((sourceId) => !sourceIds.has(sourceId))) {
+    throw new Error("partition sourceComponentId values must reference immutable source-component evidence.");
+  }
+  for (const [componentIndex, source] of sourceComponents.entries()) {
+    const actual = [...(groups.get(source.componentId) ?? [])]
+      .sort((left, right) => left.partitionId.localeCompare(right.partitionId));
+    const expected = [...expectedPartitionsForSource(source, profile, componentIndex)]
+      .sort((left, right) => left.partitionId.localeCompare(right.partitionId));
+    if (JSON.stringify(canonicalize(actual)) !== JSON.stringify(canonicalize(expected))) {
+      const description = expected[0]?.method === "grid"
+        ? "grid partition bounds, cells, estimates, and source identity"
+        : "source component must produce exactly one deterministic unsplit partition";
+      throw new Error(`${description} must exactly match immutable source-component evidence.`);
     }
   }
 }
@@ -894,40 +911,25 @@ export function planHybridModelPartitions(input: PlanHybridModelPartitionsInput)
   }
   const components = input.components
     .map(validateComponent)
-    .sort((left, right) => (
-      (left.semanticNodeId ?? left.connectedComponentId).localeCompare(right.semanticNodeId ?? right.connectedComponentId)
-      || left.connectedComponentId.localeCompare(right.connectedComponentId)
-      || left.componentId.localeCompare(right.componentId)
-    ));
+    .sort(compareModelComponents);
   if (new Set(components.map((component) => component.componentId)).size !== components.length) {
     throw new Error("hybrid partition componentId values must be unique.");
   }
   const boundsMetres = unionBounds(components);
   const partitions: HybridModelPartition[] = [];
-  for (const component of components) {
-    if (component.maxTextureDimensionPx > profile.maxTextureDimensionPx) {
-      throw new Error("component texture dimensions exceed the static-world-v1 texture limit.");
-    }
-    const oversized = exceedsLeafLimits(component, profile);
-    if (component.mobility === "movable" && oversized) {
-      const width = component.boundsMetres.max[0] - component.boundsMetres.min[0];
-      const depth = component.boundsMetres.max[2] - component.boundsMetres.min[2];
-      if (width > profile.maxPartitionCellMetres || depth > profile.maxPartitionCellMetres) {
-        throw new Error("movable objects cannot be clipped across static partition cells.");
-      }
-      throw new Error("movable object exceeds static-world-v1 leaf limits and cannot be split.");
-    }
-    partitions.push(...(oversized ? createGridPartitions(component, profile) : [createUnsplitPartition(component)]));
+  for (const [componentIndex, component] of components.entries()) {
+    partitions.push(...expectedPartitionsForSource(component, profile, componentIndex));
   }
   if (partitions.length > MAX_PARTITIONS || new Set(partitions.map((partition) => partition.partitionId)).size !== partitions.length) {
     throw new Error("hybrid partition plan exceeds the unique 256-leaf closure limit.");
   }
   const orderedPartitions = partitions.sort((left, right) => left.partitionId.localeCompare(right.partitionId));
-  const seamLocks = createSeamLocks(orderedPartitions, profile.maxPartitionCellMetres);
+  const seamLocks = createSeamLocks(orderedPartitions, profile.maxPartitionCellMetres, components);
   return validateHybridModelPartitionPlan({
     strategy: "semantic-first-connected-then-grid",
     kind: orderedPartitions.length === 1 ? "leaf" : "assembly",
     profile,
+    sourceComponents: components,
     boundsMetres,
     partitions: orderedPartitions,
     seamLocks,
@@ -1036,6 +1038,14 @@ export function planAdaptiveModelLods(input: PlanAdaptiveModelLodsInput): Adapti
   if (lod0Parsed.resolutionId !== resolutionId || lod0Parsed.candidateId !== candidateId) {
     throw new Error("LOD0 must be scoped to the requested resolution and candidate.");
   }
+  const requiresAdaptiveAttempts = lod0Parsed.triangleCount
+    >= STATIC_WORLD_V1_PROCESSING_PROFILE.adaptiveLodThresholdTriangles;
+  if (requiresAdaptiveAttempts && input.attempts.length !== 3) {
+    throw new Error("LOD0 at or above the adaptive threshold requires exactly three simplifier attempts.");
+  }
+  if (!requiresAdaptiveAttempts && input.attempts.length !== 0) {
+    throw new Error("LOD0 below the adaptive threshold must not include simplifier attempts.");
+  }
   const lod0: ModelLodRecord = {
     level: 0,
     resource: lod0Parsed.resource,
@@ -1075,9 +1085,7 @@ export function planAdaptiveModelLods(input: PlanAdaptiveModelLodsInput): Adapti
     const targetRatio = ratios[index]!;
     const previous = retained[retained.length - 1]!;
     let reasonCode: AdaptiveModelLodDiscardReason | undefined;
-    if (lod0.triangleCount < STATIC_WORLD_V1_PROCESSING_PROFILE.adaptiveLodThresholdTriangles) {
-      reasonCode = "lod0-below-adaptive-threshold";
-    } else if (!attemptInput.fidelityPassed) {
+    if (!attemptInput.fidelityPassed) {
       reasonCode = "fidelity-check-failed";
     } else if (triangleCount < STATIC_WORLD_V1_PROCESSING_PROFILE.minimumRetainedLodTriangles) {
       reasonCode = "below-minimum-triangles";
@@ -1203,12 +1211,35 @@ export function createModelCollisionPlan(input: CreateModelCollisionPlanInput): 
 /** Revalidates a serialized hybrid plan, including complete seam-lock evidence. */
 export function validateHybridModelPartitionPlan(value: unknown): HybridModelPartitionPlan {
   assertRecord(value, "HybridModelPartitionPlan");
-  assertExactKeys(value, ["strategy", "kind", "profile", "boundsMetres", "partitions", "seamLocks"], "HybridModelPartitionPlan");
+  assertExactKeys(value, [
+    "strategy",
+    "kind",
+    "profile",
+    "sourceComponents",
+    "boundsMetres",
+    "partitions",
+    "seamLocks",
+  ], "HybridModelPartitionPlan");
   if (value.strategy !== "semantic-first-connected-then-grid" || (value.kind !== "leaf" && value.kind !== "assembly")) {
     throw new Error("HybridModelPartitionPlan strategy or kind is invalid.");
   }
   const profile = validateProcessingProfile(value.profile);
+  if (!Array.isArray(value.sourceComponents)
+    || value.sourceComponents.length < 1
+    || value.sourceComponents.length > MAX_COMPONENTS) {
+    throw new Error(`HybridModelPartitionPlan requires one to ${MAX_COMPONENTS} immutable source components.`);
+  }
+  const sourceComponents = value.sourceComponents
+    .map(validateComponent)
+    .sort(compareModelComponents);
+  if (new Set(sourceComponents.map((component) => component.componentId)).size !== sourceComponents.length) {
+    throw new Error("HybridModelPartitionPlan source componentId values must be unique.");
+  }
   const boundsMetres = cloneBounds(value.boundsMetres, "HybridModelPartitionPlan.boundsMetres");
+  const sourceBounds = unionBounds(sourceComponents);
+  if (JSON.stringify(sourceBounds) !== JSON.stringify(boundsMetres)) {
+    throw new Error("HybridModelPartitionPlan parent bounds must equal immutable source component bounds.");
+  }
   if (!Array.isArray(value.partitions) || value.partitions.length < 1 || value.partitions.length > MAX_PARTITIONS) {
     throw new Error("HybridModelPartitionPlan must contain one to 256 partitions.");
   }
@@ -1280,7 +1311,7 @@ export function validateHybridModelPartitionPlan(value: unknown): HybridModelPar
       throw new Error("hybrid partition leaves must fit the configured X/Z partition cell without movable clipping.");
     }
   }
-  validateGridPartitionGeometry(partitions, profile.maxPartitionCellMetres);
+  validatePartitionsAgainstSources(partitions, sourceComponents, profile);
   if (!Array.isArray(value.seamLocks) || value.seamLocks.length > MAX_PARTITIONS * 2) {
     throw new Error("HybridModelPartitionPlan seam locks must be bounded.");
   }
@@ -1310,7 +1341,7 @@ export function validateHybridModelPartitionPlan(value: unknown): HybridModelPar
   if (new Set(seamLocks.map((lock) => lock.seamId)).size !== seamLocks.length) {
     throw new Error("HybridModelPartitionPlan seamId values must be unique.");
   }
-  const expectedSeamLocks = createSeamLocks(partitions, profile.maxPartitionCellMetres);
+  const expectedSeamLocks = createSeamLocks(partitions, profile.maxPartitionCellMetres, sourceComponents);
   const orderedSeamLocks = [...seamLocks].sort((left, right) => left.seamId.localeCompare(right.seamId));
   if (JSON.stringify(orderedSeamLocks) !== JSON.stringify(expectedSeamLocks)) {
     throw new Error("HybridModelPartitionPlan must include every deterministic grid seam lock exactly once.");
@@ -1332,6 +1363,7 @@ export function validateHybridModelPartitionPlan(value: unknown): HybridModelPar
     strategy: "semantic-first-connected-then-grid",
     kind: value.kind as "leaf" | "assembly",
     profile,
+    sourceComponents,
     boundsMetres,
     partitions: [...partitions].sort((left, right) => left.partitionId.localeCompare(right.partitionId)),
     seamLocks: orderedSeamLocks,
@@ -1350,6 +1382,14 @@ export function validateAdaptiveModelLodPlan(value: unknown): AdaptiveModelLodPl
     throw new Error("AdaptiveModelLodPlan.lods must be an array.");
   }
   const lods = validateAdaptiveModelLods(value.lods as ModelLodRecord[]);
+  const requiresAdaptiveAttempts = lods[0]!.triangleCount
+    >= STATIC_WORLD_V1_PROCESSING_PROFILE.adaptiveLodThresholdTriangles;
+  if (requiresAdaptiveAttempts && value.attempts.length !== 3) {
+    throw new Error("AdaptiveModelLodPlan requires exactly three attempts for LOD0 at or above the adaptive threshold.");
+  }
+  if (!requiresAdaptiveAttempts && value.attempts.length !== 0) {
+    throw new Error("AdaptiveModelLodPlan below the adaptive threshold must contain zero attempts.");
+  }
   const lodScope = parseContentAddressedGlb(lods[0]!.resource, "AdaptiveModelLodPlan.lods[0].resource");
   const retainedByLevel = new Map(lods.slice(1).map((lod) => [lod.level, lod]));
   const ratios = STATIC_WORLD_V1_PROCESSING_PROFILE.lodTargetRatios;
@@ -1391,9 +1431,7 @@ export function validateAdaptiveModelLodPlan(value: unknown): AdaptiveModelLodPl
       throw new Error(`${fieldName} target triangle count must match its static-world-v1 ratio.`);
     }
     let expectedReason: AdaptiveModelLodDiscardReason | undefined;
-    if (lods[0]!.triangleCount < STATIC_WORLD_V1_PROCESSING_PROFILE.adaptiveLodThresholdTriangles) {
-      expectedReason = "lod0-below-adaptive-threshold";
-    } else if (!attempt.fidelityPassed) {
+    if (!attempt.fidelityPassed) {
       expectedReason = "fidelity-check-failed";
     } else if (actualTriangleCount < STATIC_WORLD_V1_PROCESSING_PROFILE.minimumRetainedLodTriangles) {
       expectedReason = "below-minimum-triangles";
@@ -1424,7 +1462,6 @@ export function validateAdaptiveModelLodPlan(value: unknown): AdaptiveModelLodPl
       nextRetainedLevel += 1;
     } else {
       const reasons: readonly AdaptiveModelLodDiscardReason[] = [
-        "lod0-below-adaptive-threshold",
         "fidelity-check-failed",
         "below-minimum-triangles",
         "insufficient-reduction",
@@ -1569,6 +1606,29 @@ function orderedFidelityEvidence(input: readonly ModelFidelityEvidence[]): reado
   return [...input].sort((left, right) => order.indexOf(left.aspect) - order.indexOf(right.aspect));
 }
 
+function manifestPayloadForDigest(
+  manifest: ModelProcessingManifest,
+): Omit<ModelProcessingManifest, "manifestId"> {
+  const { manifestId: _manifestId, ...payload } = manifest;
+  return {
+    ...payload,
+    converter: {
+      ...manifest.converter,
+      diagnostics: [...manifest.converter.diagnostics].sort((left, right) => (
+        left.severity.localeCompare(right.severity)
+        || left.code.localeCompare(right.code)
+        || left.message.localeCompare(right.message)
+      )),
+      losses: [...manifest.converter.losses].sort((left, right) => (
+        left.severity.localeCompare(right.severity)
+        || left.code.localeCompare(right.code)
+        || left.message.localeCompare(right.message)
+      )),
+    },
+    fidelityEvidence: orderedFidelityEvidence(manifest.fidelityEvidence),
+  };
+}
+
 /** Builds and contract-validates a deterministic GLB-only parent/child runtime closure. */
 export async function createCanonicalModelRuntimePlan(
   input: CreateCanonicalModelRuntimePlanInput,
@@ -1592,9 +1652,10 @@ export async function createCanonicalModelRuntimePlan(
   const lodRecords = lods.lods;
   const lod0 = lodRecords[0]!;
   for (const lod of lodRecords) validateRuntimeResourceScope(lod.resource, resolutionId, candidateId);
-  if (partitions.kind === "leaf"
-    && (lod0.triangleCount > profile.maxTriangles || lod0.resource.byteLength > profile.maxBytes)) {
-    throw new Error("canonical LOD0 exceeds the selected static-world-v1 runtime limits.");
+  if (partitions.kind === "leaf" && lodRecords.some((lod) => (
+    lod.triangleCount > profile.maxTriangles || lod.resource.byteLength > profile.maxBytes
+  ))) {
+    throw new Error("canonical leaf GLB triangles or bytes exceed the selected static-world-v1 runtime limits.");
   }
   const textureByteLength = requireInteger(
     input.textureByteLength,
@@ -1624,52 +1685,22 @@ export async function createCanonicalModelRuntimePlan(
     validateRuntimeResourceScope(collision.record.resource, resolutionId, candidateId);
   }
   const evidence = validateModelFormatEvidence(cleanup.formatEvidence);
-  const converterInput: unknown = input.converter;
-  assertRecord(converterInput, "CreateCanonicalModelRuntimePlanInput.converter");
-  if (converterInput.sourceContentHash !== evidence.sourceContentHash) {
-    throw new Error("format evidence source hash must match converter source evidence.");
-  }
-  if (converterInput.id !== evidence.adapterId
-    || converterInput.version !== evidence.adapterVersion
-    || converterInput.sourceFormat !== evidence.sourceFormat
-    || converterInput.targetFormat !== evidence.targetFormat
-    || converterInput.outputContentHash !== lod0.resource.sha256) {
-    throw new Error("converter evidence is incompatible with signed format evidence or canonical LOD0.");
-  }
-  if (!Array.isArray(converterInput.diagnostics) || converterInput.diagnostics.length > 100
-    || !Array.isArray(converterInput.losses) || converterInput.losses.length > 100
-    || !Array.isArray(input.fidelityEvidence) || input.fidelityEvidence.length > 100) {
-    throw new Error("converter diagnostics, losses, and fidelity evidence must be arrays.");
-  }
   const children = partitionOutputs.map((output) => ({
     instanceId: output.partitionId,
     ...(output.parentPartitionId === undefined ? {} : { parentInstanceId: output.parentPartitionId }),
     assetRef: output.assetRef,
     transform: output.transform,
   }));
-  const closureHash = partitions.kind === "leaf"
-    ? lod0.resource.sha256
-    : await sha256Json({
-      parentContentHash: lod0.resource.sha256,
-      lods: lodRecords.map((lod) => lod.resource.sha256),
-      collision: collision.record.resource?.sha256 ?? null,
-      children: children.map((child) => ({
-        instanceId: child.instanceId,
-        parentInstanceId: child.parentInstanceId ?? null,
-        contentHash: contentHashForChild(child.assetRef),
-        manifestUri: manifestUriForChild(child.assetRef),
-        transform: child.transform,
-      })),
-    });
   const bounds = partitions.boundsMetres;
   const processedAt = requireTimestamp(input.processedAt, "CreateCanonicalModelRuntimePlanInput.processedAt");
-  const rawManifestPayload = {
+  const validatedSnapshot = createModelProcessingManifest({
     contractVersion: MODEL_RESOLUTION_CONTRACT_VERSION,
+    manifestId: "model-manifest-pending",
     resolutionId,
     candidateId,
     kind: partitions.kind,
     contentHash: lod0.resource.sha256,
-    closureHash,
+    closureHash: partitions.kind === "leaf" ? lod0.resource.sha256 : ZERO_SHA256,
     coordinateSystem: CANONICAL_MODEL_COORDINATE_SYSTEM,
     technicalProfile: {
       boundsMetres: bounds,
@@ -1695,31 +1726,46 @@ export async function createCanonicalModelRuntimePlan(
     fidelityEvidence: input.fidelityEvidence,
     fidelityGate: input.fidelityGate,
     processedAt,
-  };
-  const validatedDraft = createModelProcessingManifest({
-    ...rawManifestPayload,
-    manifestId: "model-manifest-pending",
   });
+  if (validatedSnapshot.converter.sourceContentHash !== evidence.sourceContentHash) {
+    throw new Error("format evidence source hash must match converter source evidence.");
+  }
+  if (validatedSnapshot.converter.id !== evidence.adapterId
+    || validatedSnapshot.converter.version !== evidence.adapterVersion
+    || validatedSnapshot.converter.sourceFormat !== evidence.sourceFormat
+    || validatedSnapshot.converter.targetFormat !== evidence.targetFormat
+    || validatedSnapshot.converter.outputContentHash !== lod0.resource.sha256) {
+    throw new Error("converter evidence is incompatible with signed format evidence or canonical LOD0.");
+  }
+  if (validatedSnapshot.fidelityGate.outcome === "blocked") {
+    throw new Error("blocked fidelity evidence cannot produce a canonical runtime plan.");
+  }
   if (Date.parse(processedAt) < Math.max(
     Date.parse(evidence.validatedAt),
-    Date.parse(validatedDraft.fidelityGate.evaluatedAt),
+    Date.parse(validatedSnapshot.fidelityGate.evaluatedAt),
   )) {
     throw new Error("processedAt must not precede format or fidelity policy evidence.");
   }
-  const { manifestId: _draftManifestId, ...validatedPayload } = validatedDraft;
-  const manifestPayload = {
-    ...validatedPayload,
-    converter: {
-      ...validatedDraft.converter,
-      diagnostics: [...validatedDraft.converter.diagnostics].sort((left, right) => (
-        left.severity.localeCompare(right.severity) || left.code.localeCompare(right.code) || left.message.localeCompare(right.message)
-      )),
-      losses: [...validatedDraft.converter.losses].sort((left, right) => (
-        left.severity.localeCompare(right.severity) || left.code.localeCompare(right.code) || left.message.localeCompare(right.message)
-      )),
-    },
-    fidelityEvidence: orderedFidelityEvidence(validatedDraft.fidelityEvidence),
-  };
+  const closureHash = partitions.kind === "leaf"
+    ? lod0.resource.sha256
+    : await sha256Json({
+      parentContentHash: lod0.resource.sha256,
+      lods: validatedSnapshot.lods.map((lod) => lod.resource.sha256),
+      collision: validatedSnapshot.collision.resource?.sha256 ?? null,
+      children: validatedSnapshot.children.map((child) => ({
+        instanceId: child.instanceId,
+        parentInstanceId: child.parentInstanceId ?? null,
+        contentHash: contentHashForChild(child.assetRef),
+        manifestUri: manifestUriForChild(child.assetRef),
+        transform: child.transform,
+      })),
+    });
+  const validatedDraft = createModelProcessingManifest({
+    ...validatedSnapshot,
+    manifestId: "model-manifest-pending",
+    closureHash,
+  });
+  const manifestPayload = manifestPayloadForDigest(validatedDraft);
   const manifestDigest = await sha256Json(manifestPayload);
   const manifest = createModelProcessingManifest({
     ...manifestPayload,
@@ -1729,7 +1775,7 @@ export async function createCanonicalModelRuntimePlan(
     ...manifest.lods.map((lod) => lod.resource),
     ...(manifest.collision.resource === undefined ? [] : [manifest.collision.resource]),
   ];
-  const rollbackClosure = collectModelRollbackClosure(manifest, manifestDigest);
+  const rollbackClosure = await collectModelRollbackClosure(manifest, manifestDigest);
   return deepFreeze({
     manifest,
     manifestDigest,
@@ -1742,14 +1788,15 @@ export async function createCanonicalModelRuntimePlan(
   });
 }
 
-/** Rebuilds the exact parent/LOD/collision/child closure used by atomic rollback. */
-export function collectModelRollbackClosure(
+/** Revalidates the manifest digest and rebuilds the exact closure used by atomic rollback. */
+export async function collectModelRollbackClosure(
   manifestInput: ModelProcessingManifest,
   manifestDigestInput: string,
-): readonly ModelRollbackClosureEntry[] {
+): Promise<readonly ModelRollbackClosureEntry[]> {
   const manifest = createModelProcessingManifest(manifestInput);
   const manifestDigest = requireSha256(manifestDigestInput, "manifestDigest");
-  if (manifest.manifestId !== `model-manifest-${manifestDigest}`) {
+  const computedDigest = await sha256Json(manifestPayloadForDigest(manifest));
+  if (computedDigest !== manifestDigest || manifest.manifestId !== `model-manifest-${computedDigest}`) {
     throw new Error("manifestDigest must exactly bind the deterministic model manifest identity.");
   }
   const entries: ModelRollbackClosureEntry[] = [{
@@ -1784,8 +1831,21 @@ export function collectModelRollbackClosure(
       digestSubject: "asset-content" as const,
       contentType: "application/json" as const,
     })));
-  if (new Set(entries.map((entry) => entry.uri)).size !== entries.length) {
-    throw new Error("rollback closure contains duplicate resource references.");
+  const uniqueEntries: ModelRollbackClosureEntry[] = [];
+  const byUri = new Map<string, ModelRollbackClosureEntry>();
+  for (const entry of entries) {
+    const existing = byUri.get(entry.uri);
+    if (existing === undefined) {
+      byUri.set(entry.uri, entry);
+      uniqueEntries.push(entry);
+      continue;
+    }
+    if (existing.sha256 !== entry.sha256
+      || existing.digestSubject !== entry.digestSubject
+      || existing.contentType !== entry.contentType
+      || existing.kind !== entry.kind) {
+      throw new Error("rollback closure contains conflicting duplicate resource references.");
+    }
   }
-  return deepFreeze(entries);
+  return deepFreeze(uniqueEntries);
 }
