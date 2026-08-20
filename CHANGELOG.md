@@ -3,12 +3,23 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added pure canonical static-world model cleanup, signed format-evidence,
+    semantic-first/grid assembly partitioning, seam-lock, adaptive LOD,
+    projected-error selection, collision-policy, deterministic manifest, GLB
+    runtime-closure, and atomic rollback planning helpers.
+  - Added small-prop, adaptive high-poly, semantic/grid assembly, seam,
+    collision-none/proxy, format drift, missing child, stable digest, and
+    rollback closure fixtures.
 
 - **Changed**
   - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
+  - Pinned fixed transitive `brace-expansion` and `nanoid` development-tool versions for the current high-severity denial-of-service advisories.
+  - Raised statements and branches coverage thresholds to the package-wide 80% release floor.
 
 - **Fixed**
+  - Re-derived serialized grid-cell geometry from each source-component extent
+    so forged or drifted partition bounds cannot retain apparently valid seam
+    evidence.
   - Kept the admission-depth regression fixture independent of the upstream canonicaliser's own matching depth guard.
 
 - **Security**

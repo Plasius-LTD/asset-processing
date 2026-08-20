@@ -109,10 +109,101 @@ admission path attaches universal evidence only.
 
 ## External Model Processing
 
-External free-model processing plans preserve raw source assets and normalize
-runtime outputs to glTF/GLB, meters, Y-up, `-Z` forward, floor-centered origin,
-stable file digests, four LOD budgets, optimized textures, and collision
-proxies for game runtime promotion.
+The package root now exposes pure, immutable planning and validation helpers for
+the `static-world-v1` model pipeline. They do not download, unpack, convert,
+render, store, promote, or roll back assets. Hosted orchestration supplies
+validated evidence and performs those side effects only after these helpers
+return a complete plan.
+
+`createStaticWorldV1ProcessingProfile` applies the default leaf ceilings of
+1,000,000 LOD0 triangles, 100 MiB GLB, 64 MiB aggregate textures, 4K texture
+dimension, and 32-metre X/Z cells. Request profiles may tighten those values;
+this package fails closed if they raise or replace the profile. Operator-raised
+profiles require a separately released policy and are not accepted by this API.
+
+`validateModelFormatEvidence` admits only formats in the signed v1 matrix:
+glTF/GLB through the dedicated adapter; OBJ, FBX, PLY, STL, DAE, 3DS, and LWO
+through the pinned Assimp importer; Blend and USD family inputs through pinned
+Blender LTS; and VSP3 through sandboxed OpenVSP when authoritative scale
+evidence is present. MAX, Maya, F3Z, unknown formats, adapter drift, invalid
+tokens, and non-GLB targets fail with `unsupported-source-format` or a bounded
+validation error. The decision token is evidence from the trusted policy
+service; this storage-neutral package validates its shape and matrix binding but
+does not hold policy signing keys.
+
+`createCanonicalModelCleanupPlan` fixes the output basis to metres, Y-up, `-Z`
+forward, a floor-centred origin, and counter-clockwise outward winding. It also
+requires finite geometry, repaired normals/tangents, deterministic primitive
+ordering, and embedded validated runtime textures.
+
+`planHybridModelPartitions` preserves semantic nodes and connected components
+first. Oversized static geometry is then split on the configured X/Z grid.
+Every adjacent grid leaf receives a deterministic lock for identical border
+positions, normals, UVs, and LOD simplification. Movable geometry is never
+clipped: a movable object that cannot satisfy one leaf fails instead.
+Serialized plans re-derive the complete cell set and exact cell bounds for each
+source component before seam evidence is accepted.
+
+`planAdaptiveModelLods` always retains LOD0 and, at 10,000 or more LOD0
+triangles, records attempts at 50%, 20%, and 8%. A candidate level is discarded
+when it fails fidelity, saves less than 30% from the preceding retained level,
+falls below 512 triangles, or regresses geometric error. Exact counts and
+measured error remain in the plan. `selectAdaptiveModelLod` selects the
+coarsest level at no more than 1.5 projected pixels and applies 20% transition
+hysteresis.
+
+`createModelCollisionPlan` keeps collision separate from cleaned LOD0. A proxy
+is mandatory unless signed category-policy evidence explicitly allows
+`collision: none`; semantic confidence cannot override this gate.
+
+`createCanonicalModelRuntimePlan` revalidates all serialized subplans, checks
+the exact format/converter/LOD0 binding, requires all runtime artifacts to be
+content-addressed candidate-scoped GLBs, and delegates final contract
+validation to `@plasius/asset-contracts`. It uses standards-based Web Crypto
+SHA-256 over canonical JSON to create a stable manifest identity. Assembly
+children are ordered by planned partition rather than caller order, and
+`collectModelRollbackClosure` returns the exact parent, LOD, collision, and
+child-reference closure for atomic promotion or rollback. A child entry labels
+its digest as `asset-content`; it does not misrepresent the child model hash as
+the bytes hash of its separately stored manifest. The parent entry similarly
+labels its digest as `manifest-identity`, while concrete GLBs use
+`resource-bytes`.
+
+Durable orchestration must persist and reuse the canonical `processedAt` and
+evidence timestamps for an idempotent retry. Timestamps are part of immutable
+evidence, so changing one intentionally creates a different manifest identity.
+
+```ts
+import {
+  createCanonicalModelCleanupPlan,
+  createStaticWorldV1ProcessingProfile,
+  planAdaptiveModelLods,
+  planHybridModelPartitions,
+  validateModelFormatEvidence,
+} from "@plasius/asset-processing";
+
+const profile = createStaticWorldV1ProcessingProfile({
+  maxTriangles: 500_000,
+  maxPartitionCellMetres: 16,
+});
+const cleanup = createCanonicalModelCleanupPlan({
+  profile,
+  formatEvidence: validateModelFormatEvidence(signedFormatEvidence),
+});
+const partitions = planHybridModelPartitions({ profile, components });
+const lods = planAdaptiveModelLods({
+  resolutionId,
+  candidateId,
+  lod0,
+  attempts: simplifierAttempts,
+});
+```
+
+The inherited remote kill switch is
+`asset.pipeline.unified-ai-assets.enabled`. This package records the governed
+processing contract but does not evaluate flags. The hosted coordinator must
+stop acquisition/processing when disabled; already immutable catalog versions
+remain referenceable for rollback.
 
 ## Mixamo Animation Metadata
 
@@ -142,7 +233,9 @@ Professional Animation Adventure assets can be checked before renderer mount:
 
 ## Related Documents
 
+- [ADR 0004: Canonical Static-World Model Processing](./docs/adrs/adr-0004-canonical-static-world-model-processing.md)
 - [ADR 0003: WGSL Shader Admission Boundary](./docs/adrs/adr-0003-wgsl-shader-admission-boundary.md)
+- [TDR 0002: Canonical Model Planning and Manifest Flow](./docs/tdrs/tdr-0002-canonical-model-planning-flow.md)
 - [TDR 0001: WGSL Shader Admission Flow](./docs/tdrs/tdr-0001-wgsl-shader-admission-flow.md)
 - plasius-ltd-site `docs/Design/unified-ai-asset-pipeline.md`
 - plasius-ltd-site `docs/adrs/adr-0084-unified-ai-asset-pipeline-packages.md`
