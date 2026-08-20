@@ -18,10 +18,19 @@ that push-triggered `ci.yml` succeeded for it. Require Node 24 and npm 11.5.1 or
 newer, request provenance, and prohibit npm write-token fallbacks. Same-repo PR
 CI may use explicit self-hosted runners; fork PR code is denied.
 
+The event-facing `ci.yml` is a lightweight caller of the repository-owned
+`ci-self-hosted.yml@main` reusable workflow. The runner group allowlists that
+stable workflow identity, while guards in both layers reject external-fork pull
+requests. Reusable jobs request only the `Public CI - Quarantined` group with
+the explicit `self-hosted`, `Linux`, and `X64` labels, and do not share npm
+cache state.
+
 ## Consequences
 
 Missing trust configuration, moved `main`, absent CI, unsupported runtime, or
-missing OIDC identity fails closed before publication.
+missing OIDC identity fails closed before publication. Pull-request validation
+remains schedulable without granting access to synthetic pull-request workflow
+identities.
 
 ## Test implications
 

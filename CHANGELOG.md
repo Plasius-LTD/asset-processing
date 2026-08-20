@@ -34,6 +34,9 @@
     interface, evidence, and style-profile artifacts.
 
 - **Fixed**
+  - Routed same-repository pull-request validation through the allowlisted
+    reusable self-hosted workflow on `main`, restoring runner admission without
+    exposing quarantined capacity to forks or shared npm cache state.
   - (placeholder)
 
 - **Security**

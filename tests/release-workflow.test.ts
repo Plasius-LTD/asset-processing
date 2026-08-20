@@ -6,6 +6,8 @@ const readWorkflow = (name: string): string =>
   readFileSync(resolve(process.cwd(), `.github/workflows/${name}.yml`), "utf8");
 const cdWorkflow = readWorkflow("cd");
 const ciWorkflow = readWorkflow("ci");
+const selfHostedCiWorkflow = readWorkflow("ci-self-hosted");
+const workflowRepository = ["Plasius", "LTD/asset-processing"].join("-");
 
 describe("package release trust boundary", () => {
   it("uses exact-main hosted OIDC publication without write tokens", () => {
@@ -27,9 +29,18 @@ describe("package release trust boundary", () => {
 
   it("keeps same-repository pull-request CI on explicit trusted runners", () => {
     expect(ciWorkflow).toContain("pull_request:");
-    expect(ciWorkflow).toContain("runs-on: [self-hosted, Linux, X64]");
     expect(ciWorkflow).toContain("github.event.pull_request.head.repo.full_name == github.repository");
+    expect(ciWorkflow).toContain(
+      `uses: ${workflowRepository}/.github/workflows/ci-self-hosted.yml@main`
+    );
+    expect(ciWorkflow).not.toContain("runs-on:");
+    expect(selfHostedCiWorkflow).toContain("on:\n  workflow_call:");
+    expect(selfHostedCiWorkflow.match(
+      /runs-on:\n {6}group: Public CI - Quarantined\n {6}labels: \[self-hosted, Linux, X64\]/gu
+    )).toHaveLength(2);
+    expect(selfHostedCiWorkflow).not.toMatch(/cache:\s*["']npm["']/u);
     expect(ciWorkflow).not.toContain("pull_request_target");
-    expect(ciWorkflow).not.toContain("fromJSON(vars.");
+    expect(selfHostedCiWorkflow).not.toContain("pull_request_target");
+    expect(selfHostedCiWorkflow).not.toContain("fromJSON(vars.");
   });
 });
