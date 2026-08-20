@@ -34,6 +34,9 @@
   - Recomputed manifest SHA-256 during asynchronous rollback reconstruction,
     deduplicated identical instanced-child dependencies, and rejected
     conflicting duplicate resource evidence.
+  - Replaced locale-sensitive manifest, partition, seam, and closure sorting
+    with a UTF-16 code-unit total order so hashes remain stable across worker
+    locale and ICU configurations.
   - Kept the admission-depth regression fixture independent of the upstream canonicaliser's own matching depth guard.
 
 - **Security**

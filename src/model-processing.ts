@@ -345,6 +345,11 @@ function assertExactKeys(value: Readonly<Record<string, unknown>>, keys: readonl
   }
 }
 
+function compareCodeUnits(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function requireToken(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !TOKEN_PATTERN.test(value)) {
     throw new Error(`${fieldName} must be a bounded token.`);
@@ -803,7 +808,7 @@ function createSeamLocks(
     existing.push(partition as GridPartitionInternal);
     gridGroups.set(partition.sourceComponentId, existing);
   }
-  for (const [componentId, group] of [...gridGroups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [componentId, group] of [...gridGroups.entries()].sort(([left], [right]) => compareCodeUnits(left, right))) {
     const componentIndex = sourceIndexes.get(componentId);
     if (componentIndex === undefined) {
       throw new Error("grid seam planning requires immutable source-component evidence.");
@@ -813,7 +818,7 @@ function createSeamLocks(
       `${partition.gridCell.x},${partition.gridCell.z}`,
       partition,
     ]));
-    for (const partition of [...group].sort((left, right) => left.partitionId.localeCompare(right.partitionId))) {
+    for (const partition of [...group].sort((left, right) => compareCodeUnits(left.partitionId, right.partitionId))) {
       const xNeighbour = byCell.get(`${partition.gridCell.x + 1},${partition.gridCell.z}`);
       if (xNeighbour !== undefined) {
         locks.push({
@@ -838,18 +843,19 @@ function createSeamLocks(
       }
     }
   }
-  return locks.sort((left, right) => left.seamId.localeCompare(right.seamId));
+  return locks.sort((left, right) => compareCodeUnits(left.seamId, right.seamId));
 }
 
 function compareModelComponents(
   left: ModelGeometryComponentInput,
   right: ModelGeometryComponentInput,
 ): number {
-  return (left.semanticNodeId ?? left.connectedComponentId).localeCompare(
+  return compareCodeUnits(
+    left.semanticNodeId ?? left.connectedComponentId,
     right.semanticNodeId ?? right.connectedComponentId,
   )
-    || left.connectedComponentId.localeCompare(right.connectedComponentId)
-    || left.componentId.localeCompare(right.componentId);
+    || compareCodeUnits(left.connectedComponentId, right.connectedComponentId)
+    || compareCodeUnits(left.componentId, right.componentId);
 }
 
 function expectedPartitionsForSource(
@@ -891,9 +897,9 @@ function validatePartitionsAgainstSources(
   }
   for (const [componentIndex, source] of sourceComponents.entries()) {
     const actual = [...(groups.get(source.componentId) ?? [])]
-      .sort((left, right) => left.partitionId.localeCompare(right.partitionId));
+      .sort((left, right) => compareCodeUnits(left.partitionId, right.partitionId));
     const expected = [...expectedPartitionsForSource(source, profile, componentIndex)]
-      .sort((left, right) => left.partitionId.localeCompare(right.partitionId));
+      .sort((left, right) => compareCodeUnits(left.partitionId, right.partitionId));
     if (JSON.stringify(canonicalize(actual)) !== JSON.stringify(canonicalize(expected))) {
       const description = expected[0]?.method === "grid"
         ? "grid partition bounds, cells, estimates, and source identity"
@@ -923,7 +929,7 @@ export function planHybridModelPartitions(input: PlanHybridModelPartitionsInput)
   if (partitions.length > MAX_PARTITIONS || new Set(partitions.map((partition) => partition.partitionId)).size !== partitions.length) {
     throw new Error("hybrid partition plan exceeds the unique 256-leaf closure limit.");
   }
-  const orderedPartitions = partitions.sort((left, right) => left.partitionId.localeCompare(right.partitionId));
+  const orderedPartitions = partitions.sort((left, right) => compareCodeUnits(left.partitionId, right.partitionId));
   const seamLocks = createSeamLocks(orderedPartitions, profile.maxPartitionCellMetres, components);
   return validateHybridModelPartitionPlan({
     strategy: "semantic-first-connected-then-grid",
@@ -1342,7 +1348,7 @@ export function validateHybridModelPartitionPlan(value: unknown): HybridModelPar
     throw new Error("HybridModelPartitionPlan seamId values must be unique.");
   }
   const expectedSeamLocks = createSeamLocks(partitions, profile.maxPartitionCellMetres, sourceComponents);
-  const orderedSeamLocks = [...seamLocks].sort((left, right) => left.seamId.localeCompare(right.seamId));
+  const orderedSeamLocks = [...seamLocks].sort((left, right) => compareCodeUnits(left.seamId, right.seamId));
   if (JSON.stringify(orderedSeamLocks) !== JSON.stringify(expectedSeamLocks)) {
     throw new Error("HybridModelPartitionPlan must include every deterministic grid seam lock exactly once.");
   }
@@ -1365,7 +1371,7 @@ export function validateHybridModelPartitionPlan(value: unknown): HybridModelPar
     profile,
     sourceComponents,
     boundsMetres,
-    partitions: [...partitions].sort((left, right) => left.partitionId.localeCompare(right.partitionId)),
+    partitions: [...partitions].sort((left, right) => compareCodeUnits(left.partitionId, right.partitionId)),
     seamLocks: orderedSeamLocks,
   });
 }
@@ -1567,7 +1573,7 @@ function canonicalize(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value)
         .filter(([, child]) => child !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([key, child]) => [key, canonicalize(child)]),
     );
   }
@@ -1615,14 +1621,14 @@ function manifestPayloadForDigest(
     converter: {
       ...manifest.converter,
       diagnostics: [...manifest.converter.diagnostics].sort((left, right) => (
-        left.severity.localeCompare(right.severity)
-        || left.code.localeCompare(right.code)
-        || left.message.localeCompare(right.message)
+        compareCodeUnits(left.severity, right.severity)
+        || compareCodeUnits(left.code, right.code)
+        || compareCodeUnits(left.message, right.message)
       )),
       losses: [...manifest.converter.losses].sort((left, right) => (
-        left.severity.localeCompare(right.severity)
-        || left.code.localeCompare(right.code)
-        || left.message.localeCompare(right.message)
+        compareCodeUnits(left.severity, right.severity)
+        || compareCodeUnits(left.code, right.code)
+        || compareCodeUnits(left.message, right.message)
       )),
     },
     fidelityEvidence: orderedFidelityEvidence(manifest.fidelityEvidence),
@@ -1823,7 +1829,7 @@ export async function collectModelRollbackClosure(
     });
   }
   entries.push(...[...manifest.children]
-    .sort((left, right) => left.instanceId.localeCompare(right.instanceId))
+    .sort((left, right) => compareCodeUnits(left.instanceId, right.instanceId))
     .map((child) => ({
       kind: "child-manifest" as const,
       uri: manifestUriForChild(child.assetRef),

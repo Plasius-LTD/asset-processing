@@ -962,6 +962,24 @@ describe("canonical static-world model processing", () => {
     expect(runtime.manifest.converter.losses.map((item) => item.code)).toEqual(["a-loss", "z-loss"]);
     await expect(collectModelRollbackClosure(runtime.manifest, "0".repeat(64))).rejects.toThrow(/exactly bind/iu);
 
+    const composedMessage = "\u00e9";
+    const decomposedMessage = "e\u0301";
+    const unicodeEvidence = [
+      { severity: "info" as const, code: "unicode", message: composedMessage },
+      { severity: "info" as const, code: "unicode", message: decomposedMessage },
+    ];
+    const unicodeForward = await createCanonicalModelRuntimePlan(smallRuntimeInput({
+      converter: { ...converter(), diagnostics: unicodeEvidence },
+    }));
+    const unicodeReverse = await createCanonicalModelRuntimePlan(smallRuntimeInput({
+      converter: { ...converter(), diagnostics: [...unicodeEvidence].reverse() },
+    }));
+    expect(unicodeForward.manifestDigest).toBe(unicodeReverse.manifestDigest);
+    expect(unicodeForward.manifest.converter.diagnostics.map((item) => item.message)).toEqual([
+      decomposedMessage,
+      composedMessage,
+    ]);
+
     const tighter = createStaticWorldV1ProcessingProfile({ maxTriangles: 7_000 });
     await expect(createCanonicalModelRuntimePlan({
       ...smallRuntimeInput(),

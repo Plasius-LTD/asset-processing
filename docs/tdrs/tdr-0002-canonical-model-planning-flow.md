@@ -61,7 +61,8 @@ conversion evidence and immutable GLB outputs into a canonical
    and later caller mutation are not authority.
 7. For a leaf, closure hash equals LOD0 content hash as required by the shared
    contract. For an assembly, canonical JSON binds parent, LODs, collision,
-   sorted children, hierarchy, transforms, child content identities, and child
+   children sorted by a locale-independent UTF-16 code-unit total order,
+   hierarchy, transforms, child content identities, and child
    manifest references before SHA-256 hashing.
 8. Canonical manifest payload JSON is SHA-256 hashed and receives
    `model-manifest-&lt;digest&gt;`. `createModelProcessingManifest` performs the final
