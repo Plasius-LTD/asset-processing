@@ -27,7 +27,7 @@ describe("package release trust boundary", () => {
     expect(cdWorkflow).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/u);
   });
 
-  it("keeps same-repository pull-request CI on explicit trusted runners", () => {
+  it("uses hosted pull-request CI and explicit trusted runners for main", () => {
     expect(ciWorkflow).toContain("pull_request:");
     expect(ciWorkflow).toContain("github.event.pull_request.head.repo.full_name == github.repository");
     expect(ciWorkflow).toContain(
@@ -36,7 +36,7 @@ describe("package release trust boundary", () => {
     expect(ciWorkflow).not.toContain("runs-on:");
     expect(selfHostedCiWorkflow).toContain("on:\n  workflow_call:");
     expect(selfHostedCiWorkflow.match(
-      /runs-on:\n {6}group: Public CI - Quarantined\n {6}labels: \[self-hosted, Linux, X64\]/gu
+      /runs-on: \$\{\{ fromJSON\(github\.event_name == 'pull_request' && '\["ubuntu-latest"\]' \|\| '\["self-hosted","Linux","X64"\]'\) \}\}/gu
     )).toHaveLength(2);
     expect(selfHostedCiWorkflow).not.toMatch(/cache:\s*["']npm["']/u);
     expect(ciWorkflow).not.toContain("pull_request_target");
