@@ -3,6 +3,8 @@ import {
   ASSET_WGSL_CONTENT_TYPE,
 } from "@plasius/asset-contracts";
 
+export * from "./model-processing.js";
+
 export const ASSET_PROCESSING_PACKAGE = "@plasius/asset-processing";
 
 export const ASSET_PROCESSING_OPERATIONS = Object.freeze([

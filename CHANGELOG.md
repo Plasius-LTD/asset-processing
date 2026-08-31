@@ -3,13 +3,40 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added pure canonical static-world model cleanup, signed format-evidence,
+    semantic-first/grid assembly partitioning, seam-lock, adaptive LOD,
+    projected-error selection, collision-policy, deterministic manifest, GLB
+    runtime-closure, and atomic rollback planning helpers.
+  - Added small-prop, adaptive high-poly, semantic/grid assembly, seam,
+    collision-none/proxy, format drift, missing child, stable digest, and
+    rollback closure fixtures.
 
 - **Changed**
   - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
+  - Pinned fixed transitive `brace-expansion` and `nanoid` development-tool versions for the current high-severity denial-of-service advisories.
+  - Raised statements and branches coverage thresholds to the package-wide 80% release floor.
   - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
 
 - **Fixed**
+  - Re-derived serialized grid-cell geometry from each source-component extent
+    so forged or drifted partition bounds cannot retain apparently valid seam
+    evidence.
+  - Bound every serialized partition, estimate, parent bound, and seam to a
+    separate immutable source-component closure; rejected duplicate unsplit
+    sources and symmetric outer-bound drift.
+  - Generated bounded ordinal partition/seam identities so every accepted
+    component path segment remains processable without token or length drift.
+  - Required all three adaptive simplifier attempts at or above 10,000 LOD0
+    triangles, zero attempts below that threshold, and the selected byte limit
+    for every retained leaf GLB.
+  - Snapshotted converter/fidelity evidence before asynchronous hashing and
+    rejected blocked fidelity gates before returning runtime artifacts.
+  - Recomputed manifest SHA-256 during asynchronous rollback reconstruction,
+    deduplicated identical instanced-child dependencies, and rejected
+    conflicting duplicate resource evidence.
+  - Replaced locale-sensitive manifest, partition, seam, and closure sorting
+    with a UTF-16 code-unit total order so hashes remain stable across worker
+    locale and ICU configurations.
   - Kept the admission-depth regression fixture independent of the upstream canonicaliser's own matching depth guard.
 
 - **Security**
