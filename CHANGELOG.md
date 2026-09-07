@@ -12,7 +12,8 @@
     rollback closure fixtures.
 
 - **Changed**
-  - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
+  - Refreshed compatible @plasius/* lockfile resolutions to the latest published releases.
+ - Updated to the surviving `@plasius/asset-contracts` 0.3.1 line, and refreshed esbuild and transitive resolutions to clear the current npm audit findings.
   - Pinned fixed transitive `brace-expansion` and `nanoid` development-tool versions for the current high-severity denial-of-service advisories.
   - Raised statements and branches coverage thresholds to the package-wide 80% release floor.
   - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
