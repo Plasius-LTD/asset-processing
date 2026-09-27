@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refresh compatible npm dependencies and published Plasius dependency resolutions for the weekly security maintenance batch (2026-09-27).
+
 - **Added**
   - Added pure canonical static-world model cleanup, signed format-evidence,
     semantic-first/grid assembly partitioning, seam-lock, adaptive LOD,
