@@ -3,10 +3,14 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Added a format-neutral model-conversion plan with explicit source/target
+    formats, runtime, fault-tolerance, and resource-packaging policies.
+  - Added source-format alias normalization and content-type mappings for
+    glTF/GLB, OBJ/MTL, FBX, STEP/IFC, IGES, and USD-family files.
 
 - **Changed**
-  - (placeholder)
+  - Preserved the legacy default processing-plan contract; CAD tessellation is
+    included only for STEP, IGES, and IFC conversion plans.
 
 - **Fixed**
   - (placeholder)

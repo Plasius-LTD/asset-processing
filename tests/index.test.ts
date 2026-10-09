@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   ASSET_PROCESSING_OPERATIONS,
+  MODEL_CONVERSION_OPERATIONS,
   MIXAMO_FARM_ADVENTURE_CLIP_IDS,
+  createModelConversionProcessingPlan,
   createDefaultProcessingPlan,
   extractGltfMaterialTextureMetadata,
   extractMixamoAnimationMetadata,
   isMixamoFarmAdventureClipId,
   resolveModelContentType,
+  resolveAssetProcessingContentType,
+  resolveModelSourceFormat,
   validateEnvironmentPropAsset,
   validateProfessionalCharacterAsset,
   validateProfessionalRootMotionProfile,
@@ -51,8 +55,28 @@ describe("asset processing", () => {
     expect(resolveModelContentType("chair.glb")).toBe("model/gltf-binary");
     expect(resolveModelContentType("texture.jpeg")).toBe("image/jpeg");
     expect(resolveModelContentType("texture.webp")).toBe("image/webp");
+    expect(resolveModelContentType("chair.OBJ")).toBe("model/obj");
+    expect(resolveModelContentType("chair.mtl")).toBe("model/mtl");
+    expect(resolveModelContentType("chair.fbx")).toBe("application/octet-stream");
+    expect(resolveModelContentType("part.step")).toBe("model/step");
+    expect(resolveModelContentType("part.stp")).toBe("model/step");
+    expect(resolveModelContentType("part.iges")).toBe("model/iges");
+    expect(resolveModelContentType("part.igs")).toBe("model/iges");
+    expect(resolveModelContentType("building.ifc")).toBe("application/x-step");
+    expect(resolveModelContentType("scene.usd")).toBe("application/octet-stream");
+    expect(resolveModelContentType("scene.usda")).toBe("model/vnd.usda");
+    expect(resolveModelContentType("scene.usdc")).toBe("application/octet-stream");
+    expect(resolveModelContentType("scene.usdz")).toBe("model/vnd.usdz+zip");
+    expect(resolveModelContentType("part.stp?download=1")).toBe("model/step");
     expect(resolveModelContentType("payload.bin")).toBe("application/octet-stream");
     expect(resolveModelContentType("notes.txt")).toBe("application/octet-stream");
+    expect(resolveAssetProcessingContentType("chair.obj")).toBe("model/obj");
+  });
+
+  it("normalizes STEP and IGES extension aliases to canonical source formats", () => {
+    expect(resolveModelSourceFormat("C:\\models\\part.STP?download=1")).toBe("step");
+    expect(resolveModelSourceFormat("models/part.igs#preview")).toBe("iges");
+    expect(resolveModelSourceFormat("notes.txt")).toBeUndefined();
   });
 
   it("creates a complete default processing plan", () => {
@@ -62,6 +86,77 @@ describe("asset processing", () => {
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.steps)).toBe(true);
     expect(plan.targetRuntime).toBe("gpu-shared");
+  });
+
+  it("creates immutable multi-format processing plans with explicit runtime policy", () => {
+    expect(MODEL_CONVERSION_OPERATIONS).toEqual([
+      "validate-model",
+      "convert-model",
+      "tessellate-cad",
+      "optimize-textures",
+      "generate-lod",
+      "generate-collision-proxy",
+      "package-runtime",
+    ]);
+
+    const gltfPlan = createModelConversionProcessingPlan({
+      assetId: "building-42",
+      sourceFormat: "gltf",
+      targetFormat: "glb",
+      targetRuntime: "gpu-shared",
+      faultToleranceMode: "fail-closed",
+      resourcePackagingPolicy: "relative-package",
+    });
+
+    expect(gltfPlan).toMatchObject({
+      assetId: "building-42",
+      featureFlag: "gpu.model.conversion.enabled",
+      sourceFormat: "gltf",
+      targetFormat: "glb",
+      targetRuntime: "gpu-shared",
+      faultToleranceMode: "fail-closed",
+      resourcePackagingPolicy: "relative-package",
+    });
+    expect(gltfPlan.steps.map((step) => step.operation)).toEqual([
+      "validate-model",
+      "convert-model",
+      "optimize-textures",
+      "generate-lod",
+      "generate-collision-proxy",
+      "package-runtime",
+    ]);
+    expect(Object.isFrozen(gltfPlan)).toBe(true);
+    expect(Object.isFrozen(gltfPlan.steps)).toBe(true);
+    expect(gltfPlan.steps.every(Object.isFrozen)).toBe(true);
+  });
+
+  it("includes CAD tessellation and rejects invalid conversion policy inputs", () => {
+    const cadPlan = createModelConversionProcessingPlan({
+      assetId: "building-42",
+      sourceFormat: "ifc",
+      targetFormat: "glb",
+      targetRuntime: "game-runtime",
+      faultToleranceMode: "continue-with-diagnostics",
+      resourcePackagingPolicy: "manifest-referenced",
+    });
+
+    expect(cadPlan.steps.map((step) => step.operation)).toContain("tessellate-cad");
+    expect(() => createModelConversionProcessingPlan({
+      assetId: "../unsafe",
+      sourceFormat: "ifc",
+      targetFormat: "glb",
+      targetRuntime: "game-runtime",
+      faultToleranceMode: "fail-closed",
+      resourcePackagingPolicy: "manifest-referenced",
+    })).toThrow(/asset id/iu);
+    expect(() => createModelConversionProcessingPlan({
+      assetId: "building-42",
+      sourceFormat: "unknown" as "ifc",
+      targetFormat: "glb",
+      targetRuntime: "game-runtime",
+      faultToleranceMode: "fail-closed",
+      resourcePackagingPolicy: "manifest-referenced",
+    })).toThrow(/source format/iu);
   });
 
   it("extracts Mixamo animation metadata for renderer playback", () => {

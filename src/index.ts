@@ -17,6 +17,50 @@ export const ASSET_PROCESSING_OPERATIONS = Object.freeze([
   "package-runtime",
 ] as const);
 
+/** Complete operation vocabulary for format-neutral model conversion plans. */
+export const MODEL_CONVERSION_OPERATIONS = Object.freeze([
+  "validate-model",
+  "convert-model",
+  "tessellate-cad",
+  "optimize-textures",
+  "generate-lod",
+  "generate-collision-proxy",
+  "package-runtime",
+] as const);
+
+/** Remote rollout key inherited from site Feature #1153. */
+export const MODEL_CONVERSION_FEATURE_FLAG = "gpu.model.conversion.enabled" as const;
+
+/** Canonical source formats accepted by the conversion planning contract. */
+export const MODEL_SOURCE_FORMATS = Object.freeze([
+  "gltf",
+  "glb",
+  "obj",
+  "fbx",
+  "step",
+  "iges",
+  "ifc",
+  "usd",
+  "usda",
+  "usdc",
+  "usdz",
+] as const);
+
+/** Formats this package can request as conversion targets. */
+export const MODEL_TARGET_FORMATS = Object.freeze([
+  "gltf",
+  "glb",
+  "obj",
+  "fbx",
+  "step",
+  "iges",
+  "ifc",
+  "usd",
+  "usda",
+  "usdc",
+  "usdz",
+] as const);
+
 export const MIXAMO_FARM_ADVENTURE_CLIP_IDS = Object.freeze([
   "female-basic-locomotion-idle",
   "female-basic-locomotion-walking",
@@ -28,7 +72,28 @@ export const MIXAMO_FARM_ADVENTURE_CLIP_IDS = Object.freeze([
 ] as const);
 
 export type AssetProcessingOperation = typeof ASSET_PROCESSING_OPERATIONS[number];
+export type ModelConversionOperation = typeof MODEL_CONVERSION_OPERATIONS[number];
+export type ModelSourceFormat = typeof MODEL_SOURCE_FORMATS[number];
+export type ModelTargetFormat = typeof MODEL_TARGET_FORMATS[number];
+export type ModelFaultToleranceMode = "fail-closed" | "continue-with-diagnostics";
+export type ModelResourcePackagingPolicy = "embedded" | "relative-package" | "manifest-referenced";
 export type MixamoFarmAdventureClipId = typeof MIXAMO_FARM_ADVENTURE_CLIP_IDS[number];
+
+const MODEL_SOURCE_FORMAT_BY_EXTENSION: Readonly<Record<string, ModelSourceFormat>> = Object.freeze({
+  gltf: "gltf",
+  glb: "glb",
+  obj: "obj",
+  fbx: "fbx",
+  step: "step",
+  stp: "step",
+  iges: "iges",
+  igs: "iges",
+  ifc: "ifc",
+  usd: "usd",
+  usda: "usda",
+  usdc: "usdc",
+  usdz: "usdz",
+});
 
 export interface AssetProcessingStep {
   readonly operation: AssetProcessingOperation;
@@ -40,6 +105,36 @@ export interface AssetProcessingPlan {
   readonly assetId: string;
   readonly steps: readonly AssetProcessingStep[];
   readonly targetRuntime: "gpu-shared" | "game-runtime";
+}
+
+/** One immutable step in a format-neutral model conversion plan. */
+export interface ModelConversionStep {
+  readonly operation: ModelConversionOperation;
+  readonly required: boolean;
+  readonly description: string;
+}
+
+/** Explicit processing and rollout policy for one model conversion request. */
+export interface ModelConversionProcessingPlan {
+  readonly contractVersion: "model-conversion-plan-v1";
+  readonly featureFlag: typeof MODEL_CONVERSION_FEATURE_FLAG;
+  readonly assetId: string;
+  readonly sourceFormat: ModelSourceFormat;
+  readonly targetFormat: ModelTargetFormat;
+  readonly targetRuntime: "gpu-shared" | "game-runtime";
+  readonly faultToleranceMode: ModelFaultToleranceMode;
+  readonly resourcePackagingPolicy: ModelResourcePackagingPolicy;
+  readonly steps: readonly ModelConversionStep[];
+}
+
+/** Required identity and policy inputs for a conversion plan. */
+export interface CreateModelConversionProcessingPlanInput {
+  readonly assetId: string;
+  readonly sourceFormat: ModelSourceFormat;
+  readonly targetFormat: ModelTargetFormat;
+  readonly targetRuntime: "gpu-shared" | "game-runtime";
+  readonly faultToleranceMode: ModelFaultToleranceMode;
+  readonly resourcePackagingPolicy: ModelResourcePackagingPolicy;
 }
 
 export interface GltfAnimationSamplerLike {
@@ -212,6 +307,18 @@ export const MODEL_CONTENT_TYPES = Object.freeze({
   ".gltf": "model/gltf+json",
   ".glb": "model/gltf-binary",
   ".bin": "application/octet-stream",
+  ".obj": "model/obj",
+  ".mtl": "model/mtl",
+  ".fbx": "application/octet-stream",
+  ".step": "model/step",
+  ".stp": "model/step",
+  ".iges": "model/iges",
+  ".igs": "model/iges",
+  ".ifc": "application/x-step",
+  ".usd": "application/octet-stream",
+  ".usda": "model/vnd.usda",
+  ".usdc": "application/octet-stream",
+  ".usdz": "model/vnd.usdz+zip",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -219,9 +326,16 @@ export const MODEL_CONTENT_TYPES = Object.freeze({
 });
 
 export function resolveModelContentType(fileName: string): string {
-  const lower = fileName.toLowerCase();
+  const lower = stripFileSuffix(fileName).toLowerCase();
   const extension = Object.keys(MODEL_CONTENT_TYPES).find((candidate) => lower.endsWith(candidate));
   return extension ? MODEL_CONTENT_TYPES[extension as keyof typeof MODEL_CONTENT_TYPES] : "application/octet-stream";
+}
+
+/** Resolves known filename extensions to their canonical source format. */
+export function resolveModelSourceFormat(fileName: string): ModelSourceFormat | undefined {
+  const lower = stripFileSuffix(fileName).toLowerCase();
+  const extension = lower.slice(lower.lastIndexOf(".") + 1);
+  return MODEL_SOURCE_FORMAT_BY_EXTENSION[extension];
 }
 
 /** Resolves model, WGSL, and JSON lifecycle artifacts without weakening legacy defaults. */
@@ -616,4 +730,65 @@ export function createDefaultProcessingPlan(assetId: string): AssetProcessingPla
     targetRuntime: "gpu-shared",
     steps,
   });
+}
+
+/**
+ * Creates an immutable, format-neutral model conversion plan.
+ * The host evaluates the remote feature flag and performs every side effect.
+ */
+export function createModelConversionProcessingPlan(
+  input: CreateModelConversionProcessingPlanInput,
+): ModelConversionProcessingPlan {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(input.assetId)) {
+    throw new TypeError("Model conversion asset ID is invalid.");
+  }
+  if (!(MODEL_SOURCE_FORMATS as readonly string[]).includes(input.sourceFormat)) {
+    throw new TypeError("Model conversion source format is unsupported.");
+  }
+  if (!(MODEL_TARGET_FORMATS as readonly string[]).includes(input.targetFormat)) {
+    throw new TypeError("Model conversion target format is unsupported.");
+  }
+  if (input.targetRuntime !== "gpu-shared" && input.targetRuntime !== "game-runtime") {
+    throw new TypeError("Model conversion target runtime is unsupported.");
+  }
+  if (input.faultToleranceMode !== "fail-closed" && input.faultToleranceMode !== "continue-with-diagnostics") {
+    throw new TypeError("Model conversion fault-tolerance mode is unsupported.");
+  }
+  if (![
+    "embedded",
+    "relative-package",
+    "manifest-referenced",
+  ].includes(input.resourcePackagingPolicy)) {
+    throw new TypeError("Model conversion resource-packaging policy is unsupported.");
+  }
+
+  const isCad = input.sourceFormat === "step" || input.sourceFormat === "iges" || input.sourceFormat === "ifc";
+  const steps: readonly ModelConversionStep[] = Object.freeze([
+    Object.freeze({ operation: "validate-model", required: true, description: "Validate source format, references, and resource limits." }),
+    Object.freeze({ operation: "convert-model", required: true, description: "Convert the validated source to the requested target format." }),
+    ...(isCad
+      ? [Object.freeze({ operation: "tessellate-cad" as const, required: true, description: "Apply the approved CAD tessellation and metadata policy." })]
+      : []),
+    Object.freeze({ operation: "optimize-textures", required: true, description: "Validate and optimize textures within runtime budgets." }),
+    Object.freeze({ operation: "generate-lod", required: true, description: "Generate bounded LOD artifacts or explicit placeholders." }),
+    Object.freeze({ operation: "generate-collision-proxy", required: true, description: "Generate collision artifacts or explicit policy evidence." }),
+    Object.freeze({ operation: "package-runtime", required: true, description: "Assemble a runtime package with a validated resource manifest." }),
+  ]);
+
+  return Object.freeze({
+    contractVersion: "model-conversion-plan-v1",
+    featureFlag: MODEL_CONVERSION_FEATURE_FLAG,
+    assetId: input.assetId,
+    sourceFormat: input.sourceFormat,
+    targetFormat: input.targetFormat,
+    targetRuntime: input.targetRuntime,
+    faultToleranceMode: input.faultToleranceMode,
+    resourcePackagingPolicy: input.resourcePackagingPolicy,
+    steps,
+  });
+}
+
+function stripFileSuffix(fileName: string): string {
+  const suffixIndex = fileName.search(/[?#]/u);
+  return suffixIndex < 0 ? fileName : fileName.slice(0, suffixIndex);
 }
