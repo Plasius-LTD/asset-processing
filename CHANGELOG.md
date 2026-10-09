@@ -3,6 +3,20 @@
 ## Unreleased
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.2.3] - 2026-10-09
+
+- **Added**
   - Added a format-neutral model-conversion plan with explicit source/target
     formats, runtime, fault-tolerance, and resource-packaging policies.
   - Added source-format alias normalization and content-type mappings for
@@ -217,3 +231,4 @@
 [0.2.0]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.0
 [0.2.1]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.1
 [0.2.2]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.2
+[0.2.3]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.3
