@@ -26,6 +26,7 @@ This package is part of the unified AI asset pipeline package family. It is scaf
 - `asset.pipeline.unified-ai-assets.enabled`
 - `asset.pipeline.external-model-harvest.enabled`
 - `asset.pipeline.shader-store.enabled`
+- `gpu.model.conversion.enabled`
 
 The shader-store flag is the remote rollout and kill switch for public shader
 candidate submission and promoted runtime discovery. Private qualification may
@@ -116,6 +117,42 @@ Additive and XR shader evidence also fails closed until
 admission path attaches universal evidence only.
 
 ## External Model Processing
+
+### Multi-format conversion planning
+
+`createModelConversionProcessingPlan` creates an immutable, side-effect-free
+plan for a model source and target. It records canonical source/target formats,
+runtime, fault-tolerance mode, resource-packaging policy, and the inherited
+`gpu.model.conversion.enabled` rollout key. The hosted coordinator must
+evaluate that remote flag before acquisition or conversion; this package does
+not evaluate remote state or execute converters.
+
+The operation vocabulary includes validation, conversion, CAD tessellation,
+texture optimization, LOD generation, collision-proxy generation, and runtime
+packaging. CAD tessellation is included only for STEP, IGES, and IFC sources;
+other plans omit that step. The legacy `createDefaultProcessingPlan` contract
+remains unchanged.
+
+```ts
+import { createModelConversionProcessingPlan } from "@plasius/asset-processing";
+
+const plan = createModelConversionProcessingPlan({
+  assetId: "building-42",
+  sourceFormat: "ifc",
+  targetFormat: "glb",
+  targetRuntime: "gpu-shared",
+  faultToleranceMode: "continue-with-diagnostics",
+  resourcePackagingPolicy: "manifest-referenced",
+});
+```
+
+`resolveModelSourceFormat` normalizes `.stp` to STEP and `.igs` to IGES.
+`resolveModelContentType` returns registered model media types for glTF/GLB,
+OBJ/MTL, STEP/IGES, and USDA/USDZ; ambiguous or unregistered binary formats use
+`application/octet-stream`. IFC uses the buildingSMART-documented
+`application/x-step` type. Canonical runtime manifests already carry converter diagnostics and semantic loss reports in their
+`converter` evidence; `createCanonicalModelRuntimePlan` validates and retains
+these fields without introducing a second manifest contract.
 
 The package root now exposes pure, immutable planning and validation helpers for
 the `static-world-v1` model pipeline. They do not download, unpack, convert,
