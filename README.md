@@ -147,6 +147,30 @@ const plan = createModelConversionProcessingPlan({
 ```
 
 `resolveModelSourceFormat` normalizes `.stp` to STEP and `.igs` to IGES.
+Both model resolvers accept an optional `ModelFileReferenceKind` second argument.
+The default, `"url"`, preserves query/fragment stripping for existing relative
+references and uses the pathname of absolute or protocol-relative URLs. Hostnames,
+credentials, query values and fragments cannot supply the extension. Malformed
+absolute URLs return the usual unknown result. URL paths are not percent-decoded.
+Use `"filename"` for literal POSIX `?`/`#` characters; this mode treats them as
+part of the name rather than guessing whether they introduce URL suffixes:
+
+```ts
+resolveModelSourceFormat("chair.obj?draft.glb"); // "obj" (legacy URL-style default)
+resolveModelSourceFormat("chair.obj?draft.glb", "filename"); // "glb"
+resolveModelContentType("models/chair#final.glb", "filename"); // "model/gltf-binary"
+```
+
+Matching is case-insensitive and requires a nonempty basename before and after
+the last dot. Both `/` and `\` separate path components. Extensionless tokens,
+dotfiles such as `.obj`, trailing dots, dotted directories and inherited object
+property names do not identify a model. Unknown names return `undefined` for
+source format and `application/octet-stream` for content type. An invalid
+reference kind throws a bounded `TypeError`. MTL is auxiliary-only and never a
+model source format. These helpers classify metadata; they do not validate bytes
+or authorize conversion. `resolveAssetProcessingContentType` keeps its existing
+one-argument URL-style model lookup.
+
 `resolveModelContentType` returns registered model media types for glTF/GLB,
 OBJ/MTL, STEP/IGES, and USDA/USDZ; ambiguous or unregistered binary formats use
 `application/octet-stream`. IFC uses the buildingSMART-documented

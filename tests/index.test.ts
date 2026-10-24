@@ -11,6 +11,7 @@ import {
   resolveModelContentType,
   resolveAssetProcessingContentType,
   resolveModelSourceFormat,
+  type ModelFileReferenceKind,
   validateEnvironmentPropAsset,
   validateProfessionalCharacterAsset,
   validateProfessionalRootMotionProfile,
@@ -77,6 +78,102 @@ describe("asset processing", () => {
     expect(resolveModelSourceFormat("C:\\models\\part.STP?download=1")).toBe("step");
     expect(resolveModelSourceFormat("models/part.igs#preview")).toBe("iges");
     expect(resolveModelSourceFormat("notes.txt")).toBeUndefined();
+  });
+
+  describe("model file references", () => {
+    const formats = [
+      ["gltf", "gltf", "model/gltf+json"],
+      ["glb", "glb", "model/gltf-binary"],
+      ["obj", "obj", "model/obj"],
+      ["fbx", "fbx", "application/octet-stream"],
+      ["step", "step", "model/step"],
+      ["stp", "step", "model/step"],
+      ["iges", "iges", "model/iges"],
+      ["igs", "iges", "model/iges"],
+      ["ifc", "ifc", "application/x-step"],
+      ["usd", "usd", "application/octet-stream"],
+      ["usda", "usda", "model/vnd.usda"],
+      ["usdc", "usdc", "application/octet-stream"],
+      ["usdz", "usdz", "model/vnd.usdz+zip"],
+    ] as const;
+
+    it.each(formats)("resolves actual %s basename extensions in both modes", (extension, format, mime) => {
+      for (const mode of ["filename", "url"] as const) {
+        for (const prefix of ["", "models.obj/", "C:\\models.gltf\\"]) {
+          const name = `${prefix}chair.${extension.toUpperCase()}`;
+          expect(resolveModelSourceFormat(name, mode)).toBe(format);
+          expect(resolveModelContentType(name, mode)).toBe(mime);
+        }
+      }
+    });
+
+    it.each([
+      "", "obj", "gltf", "stp", "constructor", "__proto__", ".obj", ".GLB",
+      "chair.", "chair..", "chair.constructor", "chair.__proto__", "chair.toString",
+      "models.obj/chair", "models.obj/", "C:\\models.glb\\chair", "chair.obj/child",
+      "chair.unknown", "chair.obj.backup",
+    ])("rejects unsupported or absent basename extension: %s", (name) => {
+      for (const mode of ["filename", "url"] as const) {
+        expect(resolveModelSourceFormat(name, mode)).toBeUndefined();
+        expect(resolveModelContentType(name, mode)).toBe("application/octet-stream");
+      }
+    });
+
+    it.each([
+      ["models/chair#final.glb", "glb", "model/gltf-binary"],
+      ["chair?draft.OBJ", "obj", "model/obj"],
+      ["models#archive/part?draft.STP", "step", "model/step"],
+      ["C:\\models\\part#draft.IGS", "iges", "model/iges"],
+    ] as const)("preserves literal question/hash filename %s", (name, format, mime) => {
+      expect(resolveModelSourceFormat(name, "filename")).toBe(format);
+      expect(resolveModelContentType(name, "filename")).toBe(mime);
+    });
+
+    it.each([
+      ["chair.glb?download=1#preview", "glb", "model/gltf-binary"],
+      ["models/part.igs#preview.obj", "iges", "model/iges"],
+      ["https://models.obj/chair.GLTF?download=1#preview", "gltf", "model/gltf+json"],
+      ["//models.obj/chair.stp?download=1", "step", "model/step"],
+      ["file:///models/part.igs#preview", "iges", "model/iges"],
+    ] as const)("preserves default and explicit URL handling: %s", (name, format, mime) => {
+      expect(resolveModelSourceFormat(name)).toBe(format);
+      expect(resolveModelSourceFormat(name, "url")).toBe(format);
+      expect(resolveModelContentType(name)).toBe(mime);
+      expect(resolveModelContentType(name, "url")).toBe(mime);
+    });
+
+    it.each([
+      "https://models.obj", "https://models.glb?download=1", "//models.obj",
+      "https://chair.obj@example.invalid/", "https://example.invalid/download?file=chair.obj",
+      "https://example.invalid/#chair.glb", "https://[invalid/chair.obj",
+      "https://example.invalid/chair%2Eobj", "https://example.invalid/chair.obj/",
+    ])("does not infer extensions from URL authority, suffixes or malformed URLs: %s", (url) => {
+      expect(resolveModelSourceFormat(url)).toBeUndefined();
+      expect(resolveModelContentType(url)).toBe("application/octet-stream");
+    });
+
+    it("distinguishes literal suffixes from URL suffixes explicitly", () => {
+      expect(resolveModelSourceFormat("chair.obj?draft.glb", "filename")).toBe("glb");
+      expect(resolveModelContentType("chair.obj?draft.glb", "filename")).toBe("model/gltf-binary");
+      expect(resolveModelSourceFormat("chair.obj?draft.glb")).toBe("obj");
+      expect(resolveModelContentType("chair.obj?draft.glb")).toBe("model/obj");
+      expect(resolveModelSourceFormat("chair.obj?download=1", "filename")).toBeUndefined();
+      expect(resolveModelContentType("chair.obj?download=1", "filename")).toBe("application/octet-stream");
+    });
+
+    it("keeps MTL auxiliary-only and preserves non-model media mappings", () => {
+      expect(resolveModelSourceFormat("chair#draft.MTL", "filename")).toBeUndefined();
+      expect(resolveModelContentType("chair#draft.MTL", "filename")).toBe("model/mtl");
+      expect(resolveModelContentType("texture#draft.PNG", "filename")).toBe("image/png");
+      expect(resolveModelContentType("texture?draft.JPG", "filename")).toBe("image/jpeg");
+      expect(resolveModelContentType("payload#draft.BIN", "filename")).toBe("application/octet-stream");
+    });
+
+    it("rejects an invalid reference kind without echoing caller data", () => {
+      const invalidKind = "untrusted-mode" as ModelFileReferenceKind;
+      expect(() => resolveModelSourceFormat("chair.obj", invalidKind)).toThrow("Invalid model file reference kind.");
+      expect(() => resolveModelContentType("chair.obj", invalidKind)).toThrow("Invalid model file reference kind.");
+    });
   });
 
   it("creates a complete default processing plan", () => {

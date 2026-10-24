@@ -77,6 +77,8 @@ export type ModelSourceFormat = typeof MODEL_SOURCE_FORMATS[number];
 export type ModelTargetFormat = typeof MODEL_TARGET_FORMATS[number];
 export type ModelFaultToleranceMode = "fail-closed" | "continue-with-diagnostics";
 export type ModelResourcePackagingPolicy = "embedded" | "relative-package" | "manifest-referenced";
+/** URL-style references keep legacy suffix handling; filenames preserve literal ? and #. */
+export type ModelFileReferenceKind = "url" | "filename";
 export type MixamoFarmAdventureClipId = typeof MIXAMO_FARM_ADVENTURE_CLIP_IDS[number];
 
 const MODEL_SOURCE_FORMAT_BY_EXTENSION: Readonly<Record<string, ModelSourceFormat>> = Object.freeze({
@@ -325,17 +327,27 @@ export const MODEL_CONTENT_TYPES = Object.freeze({
   ".webp": "image/webp",
 });
 
-export function resolveModelContentType(fileName: string): string {
-  const lower = stripFileSuffix(fileName).toLowerCase();
-  const extension = Object.keys(MODEL_CONTENT_TYPES).find((candidate) => lower.endsWith(candidate));
-  return extension ? MODEL_CONTENT_TYPES[extension as keyof typeof MODEL_CONTENT_TYPES] : "application/octet-stream";
+/** Resolves metadata from a basename extension, without validating the file bytes. */
+export function resolveModelContentType(
+  fileName: string,
+  referenceKind: ModelFileReferenceKind = "url",
+): string {
+  const extension = modelFileExtension(fileName, referenceKind);
+  const key = `.${extension}`;
+  return Object.hasOwn(MODEL_CONTENT_TYPES, key)
+    ? MODEL_CONTENT_TYPES[key as keyof typeof MODEL_CONTENT_TYPES]
+    : "application/octet-stream";
 }
 
-/** Resolves known filename extensions to their canonical source format. */
-export function resolveModelSourceFormat(fileName: string): ModelSourceFormat | undefined {
-  const lower = stripFileSuffix(fileName).toLowerCase();
-  const extension = lower.slice(lower.lastIndexOf(".") + 1);
-  return MODEL_SOURCE_FORMAT_BY_EXTENSION[extension];
+/** Resolves actual basename extensions; use filename mode for literal ? and # characters. */
+export function resolveModelSourceFormat(
+  fileName: string,
+  referenceKind: ModelFileReferenceKind = "url",
+): ModelSourceFormat | undefined {
+  const extension = modelFileExtension(fileName, referenceKind);
+  return extension !== undefined && Object.hasOwn(MODEL_SOURCE_FORMAT_BY_EXTENSION, extension)
+    ? MODEL_SOURCE_FORMAT_BY_EXTENSION[extension]
+    : undefined;
 }
 
 /** Resolves model, WGSL, and JSON lifecycle artifacts without weakening legacy defaults. */
@@ -791,4 +803,25 @@ export function createModelConversionProcessingPlan(
 function stripFileSuffix(fileName: string): string {
   const suffixIndex = fileName.search(/[?#]/u);
   return suffixIndex < 0 ? fileName : fileName.slice(0, suffixIndex);
+}
+
+function modelFileExtension(fileName: string, referenceKind: ModelFileReferenceKind): string | undefined {
+  if (referenceKind !== "url" && referenceKind !== "filename") {
+    throw new TypeError("Invalid model file reference kind.");
+  }
+  let path = fileName;
+  if (referenceKind === "url") {
+    if (/^(?:[a-z][a-z0-9+.-]*:\/\/|\/\/)/iu.test(path)) {
+      try {
+        path = new URL(path, "https://model.invalid").pathname;
+      } catch {
+        return undefined;
+      }
+    } else {
+      path = stripFileSuffix(path);
+    }
+  }
+  const basename = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+  const dot = basename.lastIndexOf(".");
+  return dot > 0 && dot < basename.length - 1 ? basename.slice(dot + 1).toLowerCase() : undefined;
 }
