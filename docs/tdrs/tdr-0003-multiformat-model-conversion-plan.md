@@ -37,8 +37,15 @@ flag, input/resource budgets, and any selected fault behavior.
 
 The canonical source list is glTF, GLB, OBJ, FBX, STEP, IGES, IFC, USD,
 USDA, USDC, and USDZ. `.stp` resolves to STEP and `.igs` resolves to IGES.
-Filename matching is case-insensitive and ignores URL query or fragment
-suffixes. MTL remains a recognized auxiliary text file for content-type
+As clarified by ADR 0007, matching is case-insensitive and requires an actual
+basename extension (not an extensionless token, dotfile, dotted directory or
+inherited property). Both model resolvers take an optional
+`ModelFileReferenceKind`: the default `"url"` preserves relative-reference
+query/fragment stripping and extracts absolute/protocol-relative URL pathnames;
+`"filename"` preserves literal question/hash filename characters. URL paths are
+not percent-decoded; malformed absolute URLs remain unknown. Invalid reference
+kinds throw a bounded `TypeError`. Both slash styles delimit basename components.
+MTL remains a recognized auxiliary text file for content-type
 resolution, not a standalone model source format.
 
 | Extensions | Content type | Reason |

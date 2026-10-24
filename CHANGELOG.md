@@ -9,6 +9,7 @@
   - (placeholder)
 
 - **Fixed**
+  - Require actual basename extensions and own-key matches for model filename classification; add explicit literal filename handling while preserving default URL-style query/fragment behavior.
   - (placeholder)
 
 - **Security**
