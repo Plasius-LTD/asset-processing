@@ -146,6 +146,15 @@ const plan = createModelConversionProcessingPlan({
 });
 ```
 
+`createModelConversionProcessingPlan` requires a non-null object input rather
+than an array or primitive. Its `assetId` must be a primitive string of 1–128
+characters: an initial ASCII letter or digit followed by ASCII letters, digits,
+`.`, `_`, `:`, or `-`. Invalid records and identities throw fixed `TypeError`
+messages without coercing or echoing caller values. The validated string is
+captured once and retained in the frozen plan; boxed strings and mutable
+identities are rejected. Existing valid identifiers are not normalized.
+An identity accessor failure returns the same bounded identity error.
+
 `resolveModelSourceFormat` normalizes `.stp` to STEP and `.igs` to IGES.
 Both model resolvers accept an optional `ModelFileReferenceKind` second argument.
 The default, `"url"`, preserves query/fragment stripping for existing relative

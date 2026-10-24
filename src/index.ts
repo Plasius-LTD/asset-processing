@@ -751,7 +751,16 @@ export function createDefaultProcessingPlan(assetId: string): AssetProcessingPla
 export function createModelConversionProcessingPlan(
   input: CreateModelConversionProcessingPlanInput,
 ): ModelConversionProcessingPlan {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(input.assetId)) {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Model conversion input is invalid.");
+  }
+  let assetId: unknown;
+  try {
+    assetId = input.assetId;
+  } catch {
+    throw new TypeError("Model conversion asset ID is invalid.");
+  }
+  if (typeof assetId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(assetId)) {
     throw new TypeError("Model conversion asset ID is invalid.");
   }
   if (!(MODEL_SOURCE_FORMATS as readonly string[]).includes(input.sourceFormat)) {
@@ -790,7 +799,7 @@ export function createModelConversionProcessingPlan(
   return Object.freeze({
     contractVersion: "model-conversion-plan-v1",
     featureFlag: MODEL_CONVERSION_FEATURE_FLAG,
-    assetId: input.assetId,
+    assetId,
     sourceFormat: input.sourceFormat,
     targetFormat: input.targetFormat,
     targetRuntime: input.targetRuntime,

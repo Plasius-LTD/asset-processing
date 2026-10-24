@@ -77,6 +77,12 @@ validation copies and retains the converter evidence in the final manifest.
 
 - Invalid asset IDs, formats, runtimes, fault modes, or packaging policies
   throw bounded `TypeError` messages that do not echo caller input.
+- Conversion-plan input must be a non-null object rather than an array or
+  primitive. Check `assetId` is a primitive string before applying the unchanged
+  1–128 character grammar (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`). Do not invoke
+  object coercion hooks or normalize identities. Capture the validated ID once
+  so a changing accessor cannot substitute a mutable identity in the frozen plan.
+  A failing identity accessor returns the same bounded invalid-ID error.
 - Unknown filename extensions return no source format and generic binary
   content type.
 - No conversion result is produced by this package; host-side failures must
