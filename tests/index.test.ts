@@ -12,6 +12,7 @@ import {
   resolveAssetProcessingContentType,
   resolveModelSourceFormat,
   type ModelFileReferenceKind,
+  type CreateModelConversionProcessingPlanInput,
   validateEnvironmentPropAsset,
   validateProfessionalCharacterAsset,
   validateProfessionalRootMotionProfile,
@@ -173,6 +174,86 @@ describe("asset processing", () => {
       const invalidKind = "untrusted-mode" as ModelFileReferenceKind;
       expect(() => resolveModelSourceFormat("chair.obj", invalidKind)).toThrow("Invalid model file reference kind.");
       expect(() => resolveModelContentType("chair.obj", invalidKind)).toThrow("Invalid model file reference kind.");
+    });
+  });
+
+  describe("model conversion identity validation", () => {
+    const validInput = {
+      assetId: "Asset:Model_1.0-2",
+      sourceFormat: "obj",
+      targetFormat: "glb",
+      targetRuntime: "gpu-shared",
+      faultToleranceMode: "fail-closed",
+      resourcePackagingPolicy: "embedded",
+    } as const;
+    const call = (input: unknown) => createModelConversionProcessingPlan(input as CreateModelConversionProcessingPlanInput);
+    const idError = new TypeError("Model conversion asset ID is invalid.");
+
+    it.each([
+      ["undefined", undefined], ["null", null], ["true", true], ["false", false],
+      ["number", 123], ["zero", 0], ["NaN", NaN], ["Infinity", Infinity],
+      ["bigint", 123n], ["array", ["asset"]], ["empty array", []],
+      ["object", {}], ["boxed string", new String("asset")], ["symbol", Symbol("asset")],
+    ] as const)("rejects non-string assetId: %s", (_name, assetId) => {
+      expect(() => call({ ...validInput, assetId })).toThrow(idError);
+    });
+
+    it.each([
+      ["undefined", undefined], ["null", null], ["string", "asset"],
+      ["number", 123], ["boolean", true], ["array", []], ["symbol", Symbol("input")],
+    ] as const)("rejects malformed input record: %s", (_name, input) => {
+      expect(() => call(input)).toThrow(new TypeError("Model conversion input is invalid."));
+    });
+
+    it("rejects a missing assetId and JSON-derived malformed identities", () => {
+      const { assetId: _assetId, ...missingId } = validInput;
+      expect(() => call(missingId)).toThrow(idError);
+      for (const value of ["null", "false", "123", "[\"asset\"]", "{}"]) {
+        expect(() => call(JSON.parse(JSON.stringify({ ...validInput, assetId: JSON.parse(value) })))).toThrow(idError);
+      }
+    });
+
+    it("does not invoke throwing or side-effecting identity coercion hooks", () => {
+      let calls = 0;
+      const identities: readonly unknown[] = [
+        { toString() { calls++; throw new Error("synthetic caller marker"); } },
+        { toString() { calls++; return "asset"; } },
+        { [Symbol.toPrimitive]() { calls++; return "asset"; } },
+      ];
+      for (const assetId of identities) expect(() => call({ ...validInput, assetId })).toThrow(idError);
+      expect(calls).toBe(0);
+    });
+
+    it.each(["A", "0", "Asset:Model_1.0-2", "A".repeat(128)])("preserves valid primitive identity and immutable plans: %s", (assetId) => {
+      const plan = call({ ...validInput, assetId });
+      expect(plan.assetId).toBe(assetId);
+      expect(typeof plan.assetId).toBe("string");
+      expect(Object.isFrozen(plan)).toBe(true);
+      expect(Object.isFrozen(plan.steps)).toBe(true);
+      expect(plan.steps.every(Object.isFrozen)).toBe(true);
+      expect(Reflect.set(plan, "assetId", "changed")).toBe(false);
+      expect(plan.assetId).toBe(assetId);
+    });
+
+    it.each(["", "A".repeat(129), " asset", "asset ", "../asset", ".asset", "_asset", "asset/name", "asset?name", "asset#name", "mødel"])("preserves identifier length/character rejection: %s", (assetId) => {
+      expect(() => call({ ...validInput, assetId })).toThrow(idError);
+    });
+
+    it("bounds an identity getter failure without exposing its error", () => {
+      const input = { ...validInput };
+      Object.defineProperty(input, "assetId", { get() { throw new Error("synthetic caller marker"); } });
+      expect(() => call(input)).toThrow(idError);
+    });
+
+    it("retains the single validated primitive identity when a getter changes", () => {
+      let reads = 0;
+      const input = { ...validInput };
+      Object.defineProperty(input, "assetId", { get() { reads++; return reads === 1 ? "asset" : ["mutable"]; } });
+      const plan = call(input);
+      expect(reads).toBe(1);
+      expect(plan.assetId).toBe("asset");
+      expect(typeof plan.assetId).toBe("string");
+      expect(Object.isFrozen(plan)).toBe(true);
     });
   });
 

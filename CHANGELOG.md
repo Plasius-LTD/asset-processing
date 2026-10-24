@@ -9,6 +9,7 @@
   - (placeholder)
 
 - **Fixed**
+  - Reject malformed conversion-plan input records and non-string asset identities before coercion, and retain the single validated primitive identity in immutable plans.
   - (placeholder)
 
 - **Security**
