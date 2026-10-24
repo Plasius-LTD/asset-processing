@@ -9,6 +9,20 @@
   - (placeholder)
 
 - **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.2.6] - 2026-10-24
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
   - Require actual basename extensions and own-key matches for model filename classification; add explicit literal filename handling while preserving default URL-style query/fragment behavior.
   - (placeholder)
 
@@ -267,3 +281,4 @@
 [0.2.3]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.3
 [0.2.4]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.4
 [0.2.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.5
+[0.2.6]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.6
