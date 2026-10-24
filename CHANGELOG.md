@@ -9,6 +9,20 @@
   - (placeholder)
 
 - **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.2.7] - 2026-10-24
+
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
   - Reject malformed conversion-plan input records and non-string asset identities before coercion, and retain the single validated primitive identity in immutable plans.
   - (placeholder)
 
@@ -283,3 +297,4 @@
 [0.2.4]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.4
 [0.2.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.5
 [0.2.6]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.6
+[0.2.7]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.7
