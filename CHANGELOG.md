@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Added**
-  - (placeholder)
+  - Add an immutable `model-package-plan-v1` with an explicit required `resource-manifest` stage before runtime packaging, while preserving existing conversion and legacy plans.
 
 - **Changed**
   - (placeholder)

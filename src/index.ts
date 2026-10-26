@@ -129,6 +129,20 @@ export interface ModelConversionProcessingPlan {
   readonly steps: readonly ModelConversionStep[];
 }
 
+/** Additive package-planning vocabulary; existing conversion operations are unchanged. */
+export type ModelPackageProcessingOperation = ModelConversionOperation | "resource-manifest";
+
+/** Required host operation in a model package plan. */
+export interface ModelPackageProcessingStep extends Omit<ModelConversionStep, "operation"> {
+  readonly operation: ModelPackageProcessingOperation;
+}
+
+/** Conversion policies plus an explicit resource-manifest qualification stage. */
+export interface ModelPackageProcessingPlan extends Omit<ModelConversionProcessingPlan, "contractVersion" | "steps"> {
+  readonly contractVersion: "model-package-plan-v1";
+  readonly steps: readonly ModelPackageProcessingStep[];
+}
+
 /** Required identity and policy inputs for a conversion plan. */
 export interface CreateModelConversionProcessingPlanInput {
   readonly assetId: string;
@@ -807,6 +821,27 @@ export function createModelConversionProcessingPlan(
     resourcePackagingPolicy: input.resourcePackagingPolicy,
     steps,
   });
+}
+
+/**
+ * Plans manifest qualification before packaging without executing either stage.
+ * The host evaluates the remote flag and qualifies the complete byte inventory
+ * through @plasius/asset-contracts before it packages or promotes any output.
+ */
+export function createModelPackageProcessingPlan(
+  input: CreateModelConversionProcessingPlanInput,
+): ModelPackageProcessingPlan {
+  const conversion = createModelConversionProcessingPlan(input);
+  const steps: readonly ModelPackageProcessingStep[] = Object.freeze(conversion.steps.flatMap((step) => (
+    step.operation === "package-runtime"
+      ? [Object.freeze({
+        operation: "resource-manifest" as const,
+        required: true,
+        description: "Qualify the complete resource manifest and byte inventory through @plasius/asset-contracts before packaging.",
+      }), step]
+      : [step]
+  )));
+  return Object.freeze({ ...conversion, contractVersion: "model-package-plan-v1", steps });
 }
 
 function stripFileSuffix(fileName: string): string {

@@ -7,3 +7,4 @@
 - [ADR 0005: Canonical Static-World Model Processing](./adr-0005-canonical-static-world-model-processing.md)
 - [ADR 0006: Multi-Format Model Conversion Planning](./adr-0006-multiformat-model-conversion-planning.md)
 - [ADR 0007: Explicit Model Filename and URL References](./adr-0007-explicit-model-file-references.md)
+- [ADR 0008: Explicit Resource Manifest Planning](./adr-0008-explicit-resource-manifest-planning.md)
