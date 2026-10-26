@@ -118,6 +118,59 @@ admission path attaches universal evidence only.
 
 ## External Model Processing
 
+### Explicit model package planning
+
+`createModelPackageProcessingPlan` accepts the same identity and policies as
+`createModelConversionProcessingPlan` and returns an immutable
+`model-package-plan-v1`. It adds one required `resource-manifest` operation
+immediately before `package-runtime`, after all conversion, texture, LOD and
+collision outputs are available. CAD sources retain their tessellation step.
+The exported `ModelPackageProcessingPlan`, `ModelPackageProcessingStep` and
+`ModelPackageProcessingOperation` types describe this additive contract.
+Existing legacy and `model-conversion-plan-v1` APIs, operation catalogs and
+sequences remain unchanged.
+
+```ts
+import { createModelPackageProcessingPlan } from "@plasius/asset-processing";
+
+const plan = createModelPackageProcessingPlan({
+  assetId: "building-42",
+  sourceFormat: "ifc",
+  targetFormat: "glb",
+  targetRuntime: "gpu-shared",
+  faultToleranceMode: "fail-closed",
+  resourcePackagingPolicy: "relative-package",
+});
+// The final two required operations are resource-manifest, package-runtime.
+```
+
+This is a plan, not an executor or proof of valid output. The host's
+`resource-manifest` handler supplies the produced `AssetManifest`, complete
+file-byte inventory and package entrypoint/resource inventory to
+`qualifyModelResourceManifest` from published `@plasius/asset-contracts@0.8.3`
+or a compatible qualified release. The host must declare that dependency
+explicitly; this package does not re-export or load that helper. Its returned
+validated manifest is the input to packaging. Qualification binds relative
+paths, declared entrypoint, resource closure, byte lengths, SHA-256 digests and
+content types before any output is packaged, used or promoted. Conversion
+diagnostics and loss evidence remain in the shared contracts. Embedded and
+manifest-referenced policies also require their resulting complete package
+inventory; the policy name never waives qualification. The host owns limits,
+cancellation, authorized acquisition and the distinction between source
+processing evidence and the general package manifest. No new manifest schema,
+parsing, storage, archive handling or network side effects are added here.
+
+The host evaluates the remotely controlled backend flag
+`gpu.model.conversion.enabled` before choosing this new plan. Enabled hosts
+may choose the new path only with a qualified executor and fixtures. Disabled
+or rolled-back hosts retain their existing loader/plan and do not execute the
+new stage. Do not silently retry a failed integrity check through the legacy
+path or substitute another model. Qualification failure stops packaging and
+promotion even with `continue-with-diagnostics`; errors/diagnostics must be
+bounded and exclude model payloads, credentials and signed URLs. This pure
+package neither evaluates the flag nor treats its recorded key as approval.
+No product capability is needed for this headless contract.
+
 ### Multi-format conversion planning
 
 `createModelConversionProcessingPlan` creates an immutable, side-effect-free
