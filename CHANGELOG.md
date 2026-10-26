@@ -3,6 +3,20 @@
 ## Unreleased
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.3.0] - 2026-10-26
+
+- **Added**
   - Add an immutable `model-package-plan-v1` with an explicit required `resource-manifest` stage before runtime packaging, while preserving existing conversion and legacy plans.
 
 - **Changed**
@@ -298,3 +312,4 @@
 [0.2.5]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.5
 [0.2.6]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.6
 [0.2.7]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.7
+[0.3.0]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.3.0
