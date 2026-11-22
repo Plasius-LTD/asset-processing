@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.3.2] - 2026-11-22
+
 - Consume the verified upstream security releases from the weekly dependency rollout; retain existing runtime contracts.
 
 - **Added**
@@ -332,3 +346,4 @@
 [0.2.7]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.2.7
 [0.3.0]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.3.0
 [0.3.1]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.3.1
+[0.3.2]: https://github.com/Plasius-LTD/asset-processing/releases/tag/v0.3.2
